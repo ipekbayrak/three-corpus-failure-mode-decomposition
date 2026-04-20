@@ -1,0 +1,247 @@
+\documentclass[10pt,conference]{IEEEtran}
+
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{placeins}
+\usepackage{xcolor}
+\setlength{\emergencystretch}{1.5em}
+
+\input{../tables/manuscript_numbers.tex}
+
+\title{A Three-Corpus Failure-Mode Decomposition of Fixed-Threshold Transfer in Tabular Flow-Level NIDS}
+
+\author{Mustafa Ipekbayrak and G{\"u}ls{\"u}m Zeynep G{\"u}rka\c{s}-Ayd{\i}n}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Cross-dataset evaluations of network intrusion detection systems (NIDS) routinely show degradation under domain shift, but they seldom distinguish threshold miscalibration from loss of ranking quality. We study this distinction in a three-corpus benchmark of fixed-threshold transfer for tabular flow-level NIDS using IoT-23, ToN-IoT, and UNSW-NB15. All corpora are mapped to a shared 16-feature flow schema, \ModelCount{} tabular classifiers are trained, and thresholds selected on source validation at \FrozenFprTarget{} false positive rate are transferred unchanged. Of \NaturalSettingCount{} transfer settings, \CompetentSettingCount{} pass a predeclared source-competence filter. Among these \CompetentSettingCount{} competent settings, \CompetentRankingFailureCount{} fall below target AUROC 0.60, and \CompetentInversionCount{} of those failures are below chance on point estimates under the transferred score orientation. The benchmark-wide count is driven by the \CompetentUnswStressTestSettingCount{} UNSW-related stress-test directions; the \CompetentIotOnlySettingCount{} IoT-only competent transfers split \CompetentIotOnlyRankingFailureCount{} failures and \CompetentIotOnlyNonCollapsedCount{} rows above the 0.60 failure floor. Low-FPR ranking is near chance benchmark-wide: target standardized pAUC@1\% ranges from \CompetentTargetPaucMin{} to \CompetentTargetPaucMax{} (median \CompetentTargetPaucMedian{}), compared with a source-holdout median of \CompetentSourcePaucMedian{}. Benign-only threshold reselection does not rescue detection (mean recalibrated TPR 0.013 across all \NaturalSettingCount{} settings), and neither a 0.5\%/1\%/5\% source-side budget sweep nor an auxiliary CORAL comparison improves the operational conclusion at the deployment budget. In this three-corpus benchmark, cross-dataset degradation is therefore dominated by ranking failure rather than threshold drift. Secondary analyses of attack novelty, benign covariate shift, and target-free monitors remain limited, and none of the audited monitors is reliable enough for deployment.
+\end{abstract}
+
+\section{Introduction}
+
+The instability of operating points across network domains has been a foundational concern in security machine learning since Axelsson~\cite{axelsson2000baserate} quantified the base-rate fallacy and Sommer and Paxson~\cite{sommer2010outside} argued that closed-world evaluations systematically overstate classifier utility. Cross-dataset NIDS generalization has since received sustained attention through inter-dataset evaluation~\cite{dhooge2020inter}, cross-evaluation frameworks~\cite{xenids2022}, common feature-set studies~\cite{commonfeat2022,layeghy2024benchmarking,iwanowski2025choice}, and threshold adaptation under concept drift~\cite{jordaney2017transcend}. These works document that performance degrades under domain shift. What they do not address is the operational decomposition of that degradation.
+
+When a threshold trained on one network is deployed unchanged on another, the resulting target behavior can fail in three operationally distinct ways under the transferred score rule. \emph{Threshold drift} means the ranking remains usable, but the source-calibrated operating point falls in the wrong region of the target score distribution; this is in principle repairable by recalibrating the threshold on unlabeled target traffic. \emph{Ranking degradation or at-chance collapse} means the transferred ranking no longer provides enough target discrimination for operational repair at the deployment budget, so threshold movement alone cannot recover useful detection. A stricter collapse case is \emph{orientation inversion}: target AUROC falls below chance, indicating that the transferred score direction is reversed relative to the target labels. Inversion is therefore a distinct subtype of collapse within ranking failure, not a benign-only recalibration problem or a label-free repair path.
+
+Prior cross-dataset studies do not make this decomposition, leaving open whether the observed degradation is a fixable calibration problem, a broader ranking failure, or a below-chance inversion under the transferred score orientation. This paper answers the question directly in a three-corpus benchmark. It builds a controlled experiment across IoT-23, ToN-IoT, and UNSW-NB15 using a shared tabular feature schema, \ModelCount{} classifiers, and \CompetentSettingCount{} transfer settings from source-model pairs that pass a predeclared competence rule, then tests benign-only threshold reselection as the simplest realistic repair.
+
+The paper contributes three findings:
+
+\begin{enumerate}
+    \item \textbf{Combined low-FPR evidence points to ranking failure, usually via inversion.} Under the paper's coarse AUROC taxonomy, \CompetentRankingFailureCount{} of \CompetentSettingCount{} settings fall below target AUROC 0.60. On point estimates, \CompetentInversionCount{} of those failing settings fall strictly below chance, indicating inverted score orientation under the transferred rule; the remaining failing setting is degraded but not inverted. All \CompetentUnswStressTestRankingFailureCount{} of \CompetentUnswStressTestSettingCount{} UNSW-related stress-test transfers fail, while the \CompetentIotOnlySettingCount{} IoT-only competent transfers split \CompetentIotOnlyRankingFailureCount{} ranking failures and \CompetentIotOnlyNonCollapsedCount{} rows above the 0.60 failure floor. Across all \CompetentSettingCount{} competent settings, target pAUC@1\% stays near the chance baseline (\CompetentTargetPaucMin{}--\CompetentTargetPaucMax{}, median \CompetentTargetPaucMedian{}; source-holdout median \CompetentSourcePaucMedian{}), and neither benign-only recalibration nor diagnostic oracle retuning restores useful sensitivity at \FrozenFprTarget{}. No setting retains ``acceptable'' ranking quality (AUROC $\geq$ 0.70).
+    \item \textbf{Benign-only threshold reselection does not rescue the benchmark.} Re-selecting the threshold on target benign traffic at \FrozenFprTarget{} FPR keeps mean recalibrated TPR at 0.013 across all \NaturalSettingCount{} settings, and the held-out benign Eval FPR exceeds the nominal budget in \RecalibrationEvalFprExceedanceCount{} settings (maximum \RecalibrationEvalFprMax{}).
+    \item \textbf{Secondary diagnostics remain limited.} A two-direction contrast suggests attack-label novelty and benign covariate shift align with different failure dimensions, but the evidence is narrow, and none of the four audited target-free monitors reaches deployable strength.
+\end{enumerate}
+
+\section{Related Work}
+
+Operational IDS evaluation requires reporting at the false-positive budget that governs deployment, not ranking summaries alone~\cite{axelsson2000baserate,fawcett2006roc,davis2006pr}. In network security, that requirement is especially important because traffic mix, label quality, and capture conditions vary across corpora~\cite{ring2019survey}.
+
+Cross-dataset evaluation has progressed from single-corpus to systematic cross-evaluation~\cite{dhooge2020inter,xenids2022,commonfeat2022,layeghy2024benchmarking,iwanowski2025choice}. Threshold adaptation under concept drift has been explicitly studied~\cite{jordaney2017transcend}, and domain-adaptation-based NIDS such as DI-NIDS~\cite{dinids2021} address representation alignment. Shift detection methods---domain classifiers, feature-distribution distances, and calibration diagnostics---are standard tools for monitoring deployed models~\cite{ben2010domain,ovadia2019uncertainty,rabanser2019failing,hendrycks2017baseline}.
+
+This paper stays within the cross-dataset evaluation tradition but contributes a failure-mode decomposition that distinguishes threshold drift from ranking failure and then separates degraded ranking from collapse, including the below-chance orientation-inversion case. It does not propose a new adaptation method; it diagnoses when adaptation is necessary versus when simple threshold adjustment is insufficient.
+
+\section{Experimental Design}
+
+\subsection{Datasets and Tiered Analysis}
+
+The experiment uses three public datasets arranged in two tiers~\cite{garcia2020iot23,booij2022ton,moustafa2015unsw}. \emph{Tier~1} (full experiment) includes all \DirectionCount{} ordered directions across IoT-23, ToN-IoT, and UNSW-NB15, yielding \NaturalSettingCount{} raw settings. \emph{Tier~2} (claim-bearing novelty subset) restricts to the \PrimaryIotSettingCount{} IoT-only settings where the coarse attack ontology achieves mapped coverage above \NoveltyCoverageFloor{} on both domains. Oracle novelty claims are made only on Tier~2. UNSW-NB15 is retained in Tier~1 as a stress-test domain but is not a semantic peer in the novelty analysis.
+
+\subsection{Feature Schema and Protocol}
+
+All datasets are first reduced to one shared flow-level primitive schema (record\_id, group\_id, label, family\_raw, proto, duration\_s, src\_bytes, dst\_bytes, src\_pkts, dst\_pkts) and then mapped deterministically into feature\_schema\_v1, the canonical 16-feature tabular flow-level NIDS representation used throughout the benchmark.
+
+\input{tables/shared_feature_schema.tex}
+\FloatBarrier
+
+Table~\ref{tab:shared-feature-schema-quantitative} lists the 12 quantitative derived features. The protocol field is one-hot encoded into four canonical indicators: proto\_tcp, proto\_udp, proto\_icmp, and proto\_other. The dataset-to-primitive mapping rules and source-side staged columns discarded before the shared schema remain in the generated artifact package. No dataset-specific feature branch is allowed in the canonical run. Each source dataset is split deterministically into train (60\%), validation (20\%), and holdout (20\%) partitions using the staged group\_id as the split and grouped-bootstrap unit. In the current staging code, this is connection-level for IoT-23 and ToN-IoT and effectively row-level for UNSW-NB15: IoT-23 uses capture\_id concatenated with the 5-tuple and protocol, ToN-IoT uses the 5-tuple and protocol, and UNSW-NB15 uses record\_id. Operating-point confidence intervals therefore resample those same group\_id units at 95\% with 2000 resamples. The monitor-audit intervals in Table~\ref{tab:monitor} instead use bootstrap over transfer settings with 5000 resamples.
+
+The experiment trains \ModelCount{} tabular baselines spanning linear, ensemble, and neural settings. For each source-model pair, the threshold is fixed once on source-validation negatives at \FrozenFprTarget{} FPR and transferred unchanged. All threshold selection uses a tie-safe rule consistent with predictions of the form score $\geq$ threshold: choose the smallest cutoff whose realized FPR under that rule does not exceed the budget; if a tied block of negative scores straddles the budget, move the cutoff strictly above that tied score so the whole tie block remains negative. For low-FPR ranking checks aligned with the deployment budget, the paper also reports pAUC@1\%, defined here as the standardized partial AUROC over FPR~$\leq$~\FrozenFprTarget{} under the transferred score orientation; on this scale, 0.5 is chance-level low-FPR ranking and 1.0 is perfect low-FPR ranking. To test whether the deployment conclusion is tied to the nominal operating point, the same frozen source-threshold transfer protocol is additionally audited at 0.5\%, 1\%, and 5\% source-validation FPR budgets, transferring each source-selected threshold unchanged to source holdout and target. As one auxiliary unlabeled adaptation check, CORAL is fit using source-train features and a deterministic 50/50 target-test adaptation half split by group, then evaluated on the disjoint target-evaluation half under the same frozen \FrozenFprTarget{} source-validation threshold rule.
+
+\subsection{Source-Model Competence Filter}
+
+The competent-setting subset is defined by a source-side rule applied before transfer interpretation. A source-model pair is marked non-competent if its source-holdout TPR@\FrozenFprTarget{} is below \SourceCompetenceTprFloor{}, if its source-holdout realized FPR exceeds \SourceCompetenceFprCeiling{}, or if the frozen threshold is saturated at the top of the score range and still violates the nominal \FrozenFprTarget{} budget. This excludes \NonCompetentSourcePairCount{} source-model pairs and leaves \CompetentSettingCount{} competent transfer settings from \CompetentSourcePairCount{} competent source-model pairs. All full-benchmark (\NaturalSettingCount{}-setting) results are still reported in parallel throughout the paper.
+
+\input{tables/source_quality.tex}
+
+\subsection{Unlabeled Recalibration Baseline}
+
+For each setting, the threshold is re-selected at \FrozenFprTarget{} FPR using only target benign traffic (no attack labels). The target benign pool is partitioned deterministically into a calibration split for threshold selection and a disjoint evaluation split for the realized benign FPR estimate. In practice, this corresponds to a short known-clean deployment window plus a held-out benign audit slice. The same tie-safe threshold rule used for source-side freezing is applied here. Benign-only threshold reselection can improve the operating point only when low-FPR discrimination remains usable; if ranking has collapsed, threshold reselection cannot restore useful sensitivity at the \FrozenFprTarget{} budget. This is the simplest realistic repair.
+
+\subsection{Oracle Novelty}
+\label{sec:oracle-novelty-def}
+
+Oracle novelty $\alpha$ is defined with target labels as the fraction of target attacks whose ontology group is unseen in the source training set. This analysis uses target labels and is therefore a diagnostic tool, not a deployable one. The analysis is claim-bearing only on Tier~2 (the \PrimaryIotSettingCount{} IoT-only settings where both source and target mapped attack coverage exceeds \NoveltyCoverageFloor{}).
+
+\subsection{Target-Free Monitors}
+\label{sec:monitors}
+
+We audit four unlabeled monitors against the operational failure targets:
+
+\textbf{Target-free novelty proxy ($\hat{\alpha}$).} A $k$-NN model ($k{=}10$) fitted on source-train attacks, with cutoff at the $0.95$ quantile of leave-one-out source distances. It scores the fraction of target predicted-positives whose $k$-NN distance exceeds the cutoff. This is a pre-specified heuristic baseline with frozen hyperparameters, not a proposed method. By design, $\hat{\alpha}$ measures attack-side novelty only; benign covariate shift is outside its line of sight.
+
+\textbf{Proxy-A distance ($d_A$).} A logistic domain classifier; $d_A = \max(0, 2(1 - 2\,\mathrm{err}))$.
+
+\textbf{Average Wasserstein distance.} Average feature-wise transport distance (1D Wasserstein) between source-train and target.
+
+\textbf{Source-validation risk.} Negated source-validation TPR---a trivial baseline.
+
+\subsection{Evaluation Targets}
+
+The monitors are evaluated against two operational targets.
+
+\textbf{Operational severity} is the maximum of relative TPR drop and FPR severity:
+\[
+\mathrm{severity} = \max(\mathrm{relative\ TPR\ drop},\ \mathrm{FPR\ severity}).
+\]
+Relative TPR drop is
+\[
+\max(0,\, 1 - \mathrm{TPR}_{\mathrm{target}} / \mathrm{TPR}_{\mathrm{source}}),
+\]
+and FPR severity is
+\[
+\min(1,\, \max(0,\, \mathrm{FPR}_{\mathrm{target}} / 0.01 - 1) / 9).
+\]
+This stylized composite is a reporting summary, not a validated incident-cost model.
+
+\textbf{Catastrophic operational failure} $= \mathbf{1}[\text{severity} \geq 1]$.
+
+\section{Results}
+
+\subsection{Source-Side Sanity}
+
+Table~\ref{tab:source} shows that the \CompetentSourcePairCount{} competent source-model pairs all achieve AUROC above 0.80 and source-holdout FPR near the intended \FrozenFprTarget{} budget (range \CompetentSourceFprMin{}--\CompetentSourceFprMax{}). The threshold calibration therefore holds within-domain on the rows that enter the competent-setting analysis. Rows marked with $\dagger$ fail the source-side competence rule and are shown for completeness.
+
+\FloatBarrier
+
+\subsection{Full Cross-Domain Transfer}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/transfer_tpr.pdf}
+\caption{Tier~1 benchmark: target TPR at frozen \FrozenFprTarget{}.}
+\label{fig:transfer-tpr}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/transfer_fpr.pdf}
+\caption{Tier~1 benchmark: realized target FPR under the transferred threshold.}
+\label{fig:transfer-fpr}
+\end{figure}
+
+Across all \NaturalSettingCount{} raw settings, median target TPR is \AllNaturalMedianTargetTpr{} and median realized FPR is \AllNaturalMedianRealizedFpr{} (Figures~\ref{fig:transfer-tpr} and~\ref{fig:transfer-fpr}). On the \CompetentSettingCount{} competent settings, median target TPR rises slightly to \CompetentMedianTargetTpr{} and median realized FPR to \CompetentMedianRealizedFpr{}.
+
+\input{tables/cross_domain_summary.tex}
+
+\subsection{Ranking Failure Taxonomy}
+\label{sec:ranking-diagnosis}
+
+We classify each setting by its target AUROC using the Hosmer--Lemeshow discrimination guideline~\cite{hosmer2013applied}: AUROC below 0.60 indicates ranking failure at the paper's coarse discrimination floor. Within that umbrella, AUROC at or below 0.50 is ranking collapse. Exact-chance rows are collapse without usable directional signal, while AUROC below 0.50 is the inverted target score orientation subset of that collapse category under the transferred score rule. Rows with 0.50~$<$~AUROC~$<$~0.60 are degraded rather than collapsed. No setting in this benchmark lies exactly at the AUROC~=~0.50 boundary. This cutoff reflects 60\% pairwise concordance---operationally insufficient for alert-budget deployment.
+
+\input{tables/ranking_collapse.tex}
+
+Table~\ref{tab:collapse} shows that \CompetentRankingFailureCount{} of \CompetentSettingCount{} competent settings fall into ranking failure. Source models with AUROC 0.80--1.00 drop to target AUROC \CompetentMinTargetAuroc{}--\CompetentMaxTargetAuroc{}. Of these failing settings, \CompetentCollapseCount{} are point-estimate collapse rows. Because no setting lies exactly at the AUROC~=~0.50 boundary, all \CompetentCollapseCount{} are below-chance inversions under the transferred score orientation. The remaining failing setting is degraded but not inverted. Of these point-estimate inversion rows, \CompetentRobustInversionCount{} still have 95\% AUROC upper bounds below 0.50. A score-space view is consistent with that interpretation: all \CompetentSourcePositiveMedianGapCount{} competent source-holdout rows keep attack median scores above benign medians, while \CompetentInversionMedianCrossoverCount{} of the \CompetentInversionCount{} point-estimate inversion rows show target benign medians meeting or exceeding target attack medians. These below-chance rows should not be read as evidence of a deployable sign-flip fix: under the paper's source-only deployment setting, correcting score orientation would require target labels, prior semantic orientation knowledge, or a separate adaptation method, so they remain operational failures here. Only \CompetentNonCollapsedCount{} competent settings lie above the 0.60 failure floor: I23$\to$TON / LR (0.636), I23$\to$TON / HGB (0.617), and TON$\to$I23 / MLP (0.624). Table~\ref{tab:collapse} now reports grouped-bootstrap 95\% CIs for target AUROC together with the source-holdout / target pAUC@1\% pair for every competent setting; even these near-boundary rows remain below the paper's acceptable-ranking threshold on their point estimates.
+These point-estimate failures are carried by the \CompetentUnswStressTestSettingCount{} UNSW-related stress-test transfers, which all fail, whereas the \CompetentIotOnlySettingCount{} IoT-only competent settings split \CompetentIotOnlyRankingFailureCount{} failures and \CompetentIotOnlyNonCollapsedCount{} rows above the 0.60 failure floor.
+
+The low-FPR view is benchmark-wide, not just a survivor check. Across all \CompetentSettingCount{} competent settings, target pAUC@1\% ranges from \CompetentTargetPaucMin{} to \CompetentTargetPaucMax{} with median \CompetentTargetPaucMedian{}, while the median source-holdout pAUC@1\% is \CompetentSourcePaucMedian{}. That target distribution sits effectively on the chance-level 0.5 baseline, far below source-holdout performance. This operational picture does not change even where near-boundary target-AUROC intervals approach the 0.60 floor: benign-only recalibration and oracle retuning still fail to recover useful sensitivity at the \FrozenFprTarget{} budget. The \CompetentRankingFailureCount{}/\CompetentSettingCount{} figure is therefore a point-estimate summary of the coarse AUROC taxonomy, not the sole basis for the deployment-facing conclusion. Across the \CompetentNonCollapsedCount{} competent settings above the 0.60 failure floor, target pAUC@1\% ranges only from \CompetentNonCollapsedTargetPaucMin{} to \CompetentNonCollapsedTargetPaucMax{}, while the median source-holdout pAUC@1\% for the same settings is \CompetentNonCollapsedSourcePaucMedian{}. Even those rows are therefore weak exactly where the deployment budget matters.
+
+\input{tables/budget_robustness.tex}
+
+Table~\ref{tab:acsac-budget-robustness} extends that audit across the 0.5\%/1\%/5\% source-side budget sweep. Looser source budgets raise competent-set median target TPR from \BudgetHalfPctCompetentMedianTargetTpr{} to \BudgetFivePctCompetentMedianTargetTpr{}, but median realized target FPR still remains \BudgetHalfPctCompetentMedianBudgetMultiple{}x to \BudgetFivePctCompetentMedianBudgetMultiple{}x the selected budget and catastrophic failures persist (\BudgetHalfPctCompetentCatastrophicCount{} to \BudgetFivePctCompetentCatastrophicCount{} of \CompetentSettingCount{} settings). The largest FPR$\times$ medians are driven by \BudgetHalfPctCompetentDominantFprxDirection{} at 0.5\%, \BudgetOnePctCompetentDominantFprxDirection{} at 1\%, and \BudgetFivePctCompetentDominantFprxDirections{} at 5\%. Even at 5\%, \BudgetFivePctCompetentCatastrophicCount{} settings remain catastrophic, still \BudgetFivePctCompetentCatastrophicShare{} of the competent set. The deployment-facing conclusion therefore does not reverse across this source-side budget sweep.
+
+\input{tables/coral_auxiliary.tex}
+
+Table~\ref{tab:acsac-coral-auxiliary} is a split-matched auxiliary comparison on the same \CompetentSettingCount{} competent settings and held-out target-evaluation halves. In that matched view, CORAL raises median target AUROC but leaves target pAUC@1\% at \CoralCompetentMedianTargetPauc{} while worsening median FPR$\times$ to \CoralCompetentMedianBudgetMultiple{} and increasing catastrophic settings to \CoralCompetentCatastrophicCount{}. This auxiliary adaptation check therefore supports the paper's diagnosis: improving whole-ROC ranking does not recover low-FPR deployability here.
+
+\FloatBarrier
+
+\subsection{Benign-Only Recalibration Does Not Rescue Transfer}
+\label{sec:recalibration-results}
+
+\input{tables/recalibration.tex}
+
+Table~\ref{tab:acsac-recalibration} lists all \NaturalSettingCount{} settings under the benign-only reselection baseline and reports the held-out benign evaluation FPR explicitly. The benign-only threshold is chosen on a deterministic calibration split of the target benign rows, and the printed Eval FPR is the realized FPR on a disjoint held-out benign evaluation split. Benign-only threshold reselection does not rescue the benchmark overall. Even the three competent settings above the 0.60 failure floor---I23$\to$TON / LR, I23$\to$TON / HGB, and TON$\to$I23 / MLP---remain weak after recalibration, and no row exceeds recalibrated TPR 0.10. The calibration split respects the budget by construction under the tie-safe rule; Eval FPR is instead a held-out audit estimate, and it exceeds the nominal budget in \RecalibrationEvalFprExceedanceCount{} settings (maximum \RecalibrationEvalFprMax{}). A score-space audit of the calibration-versus-evaluation benign partitions yields median KS \RecalibrationPartitionScoreKsMedian{} and maximum KS \RecalibrationPartitionScoreKsMax{}, so the paper reports these exceedances descriptively rather than attributing them to a single cause. Regardless of that audit diagnostic, recalibrated TPR remains too low to change the benchmark conclusion.
+
+This pattern is consistent with representational failure dominating in these settings. When target ranking collapses to chance or below, no threshold can restore useful sensitivity at the \FrozenFprTarget{} budget under the transferred score orientation. When target AUROC survives only in the 0.617--0.636 range, the rows remain above the 0.60 failure floor but their low-FPR discrimination is still too weak to support useful detection at that budget.
+
+\input{tables/oracle_retuned_summary.tex}
+
+Table~\ref{tab:acsac-oracle-retuned} makes the same point with target-label access granted for diagnosis only. The paired median $\Delta$TPR is negative in five directions, with the remaining direction at 0.000, and the direction-level retuned TPRs remain low. The TON$\to$I23 direction is not a case where oracle retuning arbitrarily destroys a good detector; the transferred frozen threshold is already operating badly off-budget on target, so restoring the \FrozenFprTarget{} FPR budget requires a much higher cutoff than the target ranking can support. Oracle retuning therefore does not overturn the main conclusion that representation failure, not merely frozen threshold placement, dominates this benchmark.
+
+\FloatBarrier
+
+\subsection{Secondary Diagnostic Contrast: Novelty and Benign Shift}
+\label{sec:covariate-shift}
+
+This section reports a limited two-direction IoT contrast in which attack novelty and benign covariate shift appear to align with different failure dimensions, not a general separability claim. Per-feature Kolmogorov--Smirnov tests between source and target benign traffic reveal moderate covariate shift in the I23$\leftrightarrow$TON pair (mean KS~$\approx$~0.26) and large shift in UNSW-NB15 directions (mean KS~$\approx$~0.48--0.54).
+
+The I23$\leftrightarrow$TON pair provides a natural contrast. The benign feature distributions are the same pair regardless of transfer direction (KS is measured between two fixed distributions), but the models trained on each domain process that shift differently. The I23$\to$TON direction carries oracle novelty $\alpha = $ \IotToTonOracleAlpha{} and mean TPR drop \IotToTonMeanRelativeTprDrop{}, while TON$\to$I23 has $\alpha = $ \TonToIotOracleAlpha{} with massive FPR drift (mean FPR \TonToIotMeanRealizedFpr{}). The outcome asymmetry, given identical covariate-shift magnitude, is consistent with attack novelty driving sensitivity loss and the learned representation interacting with benign shift to produce FPR drift.
+
+This first I23$\leftrightarrow$TON contrast averages over all 4 IoT model rows in Tier~2 before the competence filter is applied.
+
+This directional contrast is informative but limited: it rests on only two transfer directions, and the paper does not claim it establishes a general relationship. Across all \DirectionCount{} directions, the global KS-versus-FPR-severity association is weak and negative (\DirectionBenignKsFprSeveritySpearman{}), so the current evidence does not support a monotone global law.
+
+\input{tables/oracle_direction.tex}
+
+On the \PrimaryIotSettingCount{} IoT-only settings (Tier~2), the I23$\to$TON direction has oracle novelty \IotToTonOracleAlpha{} and the reverse has \TonToIotOracleAlpha{}. The two-direction contrast is consistent with attack-label novelty as a predictor of sensitivity loss, but the underlying design still supports only two distinct $\alpha$ values (one per direction) replicated across the competent model rows within each direction. Table~\ref{tab:acsac-oracle-direction} then narrows to the competence-filtered Cat./3 directional summary, leaving 3 competent model rows per direction after applying the same source-side competence rule used for the competent-setting benchmark. This remains a directional contrast, not evidence for a general relationship.
+
+\FloatBarrier
+
+\subsection{Target-Free Monitor Audit}
+\label{sec:monitor-results}
+
+\begin{table}[t]
+\centering
+\footnotesize
+\caption{Target-free monitor comparison on all \NaturalSettingCount{} settings. Bootstrap 95\% CIs ($n{=}5000$).}
+\label{tab:monitor}
+\begin{tabular}{lll}
+\toprule
+Monitor & Cat.\ AUROC [95\% CI] & Sev.\ Spearman [95\% CI] \\
+\midrule
+$\hat{\alpha}$ & 0.408 [0.159, 0.682] & $-0.170$ [$-0.513$, 0.224] \\
+Proxy-A & 0.350 [0.118, 0.611] & $-0.223$ [$-0.590$, 0.197] \\
+Wasserstein & 0.384 [0.128, 0.658] & $-0.171$ [$-0.568$, 0.260] \\
+Source risk & 0.492 [0.256, 0.722] & $-0.065$ [$-0.423$, 0.292] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:monitor} shows all four monitors with bootstrap confidence intervals. No audited monitor clears even a 0.50 catastrophic-AUROC point estimate by a meaningful margin, and every CI still spans chance. $\hat{\alpha}$ remains negative under the corrected benchmark artifacts: its catastrophic AUROC is 0.408 [0.159, 0.682] and its severity association is weak and negative. That weakness is plausible here for two design-aligned reasons: $\hat{\alpha}$ only sees attack-side novelty and is blind to benign shift, and its zero-positive fallback ties the estimate to the transferred detector's own score ranking under shift. This audit therefore remains a secondary negative result rather than evidence that any tested monitor is deployably reliable.
+
+\section{Discussion}
+
+The failure mode decomposition is the central finding. Prior cross-dataset IDS evaluations document aggregate degradation; this experiment shows that the degradation is predominantly ranking failure. Under the coarse AUROC taxonomy, that appears as \CompetentRankingFailureCount{}/\CompetentSettingCount{} competent settings. On point estimates, \CompetentInversionCount{} of the failing competent settings fall below chance under the transferred score orientation, while the remaining failing setting is degraded but not inverted. All \CompetentUnswStressTestSettingCount{} UNSW-related stress-test transfers fail, whereas the \CompetentIotOnlySettingCount{} IoT-only competent transfers split \CompetentIotOnlyRankingFailureCount{} ranking failures and \CompetentIotOnlyNonCollapsedCount{} rows above the 0.60 failure floor. Across the competent set, target pAUC@1\% remains near the chance baseline (\CompetentTargetPaucMedian{} median versus \CompetentSourcePaucMedian{} on source holdout), and the simplest realistic repair---benign-only threshold reselection on target benign traffic---does not rescue the benchmark overall.
+
+A score-space view supports that reading: all \CompetentSourcePositiveMedianGapCount{} competent source-holdout rows keep attack median scores above benign medians, while \CompetentInversionMedianCrossoverCount{} of the \CompetentInversionCount{} point-estimate inversion rows show target benign medians meeting or exceeding target attack medians, consistent with score-order collapse or reversal under transfer rather than a label-free repair path.
+
+The novelty and benign-shift analyses are secondary. The I23$\leftrightarrow$TON pair suggests that attack novelty aligns more with sensitivity loss while benign covariate shift aligns more with false-positive drift, but this remains a two-direction contrast rather than broad evidence, and the global KS-versus-FPR relation is weak and non-monotone. The monitor audit is narrower still: it shows that none of the four tested target-free scores is reliable enough to support deployment in this benchmark.
+
+\textbf{Implications for practitioners.} As a debugging heuristic, practitioners may inspect how the benign score distribution shifts between source data and a small target-benign sample, but this paper does not validate benign score-CDF drift as a standalone warning signal. A benign-only sample also cannot quantify ranking quality; for that, a small labeled target sample or a domain-adaptation evaluation~\cite{dinids2021,sun2016return} is needed.
+
+\section{Limitations}
+
+This experiment covers \CompetentSettingCount{} competent settings from \DatasetCount{} datasets and \ModelCount{} tabular classifiers---a controlled experiment, not a field-level benchmark. It still does not include a sequence-based NIDS baseline. The feature schema is a single shared flow-level representation; alternative featurizations may yield different failure patterns.
+
+The common-denominator 16-feature schema is intentionally aggressive. It improves cross-dataset comparability, but it likely understates the transferable signal available to richer dataset-native feature sets. Table~\ref{tab:acsac-native-feature-aux} reports an auxiliary within-domain information-retention audit that compares the shared 16 features with a dataset-native augmented representation built from admissible local fields. This auxiliary study is diagnostic only: it does not replace the canonical transfer benchmark because the native feature spaces are not directly comparable across datasets. It is also HGB-only, so it should be read as a representative strong-model diagnostic rather than evidence that LR / ET / MLP retain the same amount of dataset-native signal.
+
+\input{tables/native_feature_aux.tex}
+
+The AUROC 0.60 cutoff for ranking failure follows the Hosmer--Lemeshow ``poor discrimination'' guideline~\cite{hosmer2013applied}. We report target AUROC values continuously in Table~\ref{tab:collapse}, distinguish collapse (AUROC~$\leq$~0.50) from degraded ranking (0.50~$<$~AUROC~$<$~0.60), and use the already-defined pAUC@1\% low-FPR ranking check both in the competent-setting benchmark-wide summary and per setting in Table~\ref{tab:collapse} so readers can see both the coarse discrimination cutoff and the budget-aligned ranking weakness. The oracle novelty contrast rests on only two distinct $\alpha$ values and is presented as a directional observation, not a general claim.
+
+The monitor audit is bounded by sample size: \NaturalSettingCount{} settings with CIs spanning from below chance to moderate cannot support strong claims about monitor utility. The operational severity target is a stylized reporting tool, not a validated cost model.
+
+\section{Conclusion}
+
+Ranking failure---not threshold drift---is the dominant failure mode in this three-corpus benchmark of fixed-threshold tabular flow-level NIDS transfer. Under the coarse AUROC taxonomy, that appears as \CompetentRankingFailureCount{}/\CompetentSettingCount{} competent settings. On point estimates, \CompetentInversionCount{} of the failing competent settings fall below chance under the transferred score orientation, while the remaining failing setting is degraded but not inverted. All \CompetentUnswStressTestSettingCount{} UNSW-related stress-test transfers fail, whereas the \CompetentIotOnlySettingCount{} IoT-only competent transfers split \CompetentIotOnlyRankingFailureCount{} ranking failures and \CompetentIotOnlyNonCollapsedCount{} rows above the 0.60 failure floor. Across the competent set, target pAUC@1\% remains near chance and benign-only threshold reselection on target traffic does not rescue the benchmark overall, consistent with representational failure. This conclusion is robust to the 0.5\%/1\%/5\% source-side budget sweep: even at 5\%, competent-set median realized target FPR remains \BudgetFivePctCompetentMedianBudgetMultiple{}x the selected budget and \BudgetFivePctCompetentCatastrophicCount{} settings remain catastrophic, still \BudgetFivePctCompetentCatastrophicShare{} of the competent set. A split-matched auxiliary CORAL check raises whole-ROC AUROC but leaves low-FPR ranking unchanged and worsens off-budget/catastrophic behavior, reinforcing rather than weakening the main deployment conclusion. Secondary analyses on novelty, benign shift, and target-free monitoring remain limited and non-deployable in this benchmark.
+
+\FloatBarrier
+
+\bibliographystyle{IEEEtran}
+\bibliography{../references}
+
+\end{document}

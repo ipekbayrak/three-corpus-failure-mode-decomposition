@@ -1,0 +1,146 @@
+inherits: base.yaml
+
+render:
+  benchmark_predictions: artifacts/benchmark/predictions.csv
+  benchmark_within_domain_summary: artifacts/benchmark/within_domain_summary.csv
+  benchmark_cross_domain_summary: artifacts/benchmark/cross_domain_summary.csv
+  source_holdout_fpr: artifacts/benchmark/source_holdout_fpr.csv
+  ranking_diagnosis: artifacts/ranking_diagnosis/ranking_diagnosis.csv
+  pilot_settings: artifacts/pilot/pilot_settings.csv
+  decision_metrics: artifacts/decision/decision_eval.csv
+  results_manifest: artifacts/manifests/results_manifest.csv
+  claims_csv: artifacts/claims/claims.csv
+
+claim_package:
+  benchmark_settings: artifacts/benchmark/settings.csv
+  benchmark_within_domain_summary: artifacts/benchmark/within_domain_summary.csv
+  benchmark_cross_domain_summary: artifacts/benchmark/cross_domain_summary.csv
+  decision_eval_audit: artifacts/decision/decision_eval.csv
+  outputs:
+    monitor_comparison_csv: artifacts/claims/full_data_monitor_comparison.csv
+    primary_oracle_context_csv: artifacts/claims/full_data_primary_oracle_context.csv
+    claim_decision_json: artifacts/claims/full_data_claim_decision.json
+    claim_summary_md: artifacts/claims/full_data_claim_summary.md
+
+acsac_diagnostics:
+  inputs:
+    benchmark_settings: artifacts/benchmark/settings.csv
+    benchmark_predictions: artifacts/benchmark/predictions.csv
+  outputs:
+    target_retuned_oracle_baseline_csv: artifacts/acsac/target_retuned_oracle_baseline.csv
+    fpr_budget_sensitivity_csv: artifacts/acsac/fpr_budget_sensitivity.csv
+  target_fpr: 0.01
+  budgets:
+    - 0.005
+    - 0.01
+    - 0.05
+
+schema_appendix_assets:
+  outputs:
+    feature_schema_csv: artifacts/schema/shared_feature_schema.csv
+    raw_mapping_csv: artifacts/schema/raw_to_primitive_mapping.csv
+    discarded_columns_csv: artifacts/schema/discarded_source_columns.csv
+    journal_feature_table: paper/tables/shared_feature_schema.tex
+    acsac_feature_table: paper/acsac/tables/shared_feature_schema.tex
+
+recalibration_assets:
+  inputs:
+    benchmark_settings: artifacts/benchmark/settings.csv
+    benchmark_predictions: artifacts/benchmark/predictions.csv
+  outputs:
+    recalibration_csv: artifacts/recalibration/unlabeled_recalibration.csv
+    acsac_table: paper/acsac/tables/recalibration.tex
+  target_fpr: 0.01
+
+native_auxiliary:
+  split_manifest_csv: artifacts/manifests/split_manifest.csv
+  target_fpr: 0.01
+  max_categorical_cardinality: 16
+  models:
+    - hist_gradient_boosting
+  outputs:
+    summary_csv: artifacts/aux_native/within_domain_summary.csv
+    feature_manifest_csv: artifacts/aux_native/feature_manifest.csv
+    split_audit_csv: artifacts/aux_native/split_audit.csv
+    staged_root: artifacts/aux_native/staged
+    journal_table: paper/tables/native_feature_aux.tex
+    acsac_table: paper/acsac/tables/native_feature_aux.tex
+
+coral_auxiliary:
+  target_fpr: 0.01
+  adaptation_frac: 0.5
+  models:
+    - logistic_regression
+    - extra_trees
+    - hist_gradient_boosting
+    - mlp
+  outputs:
+    summary_csv: artifacts/da/coral_auxiliary.csv
+
+manuscript_assets:
+  inputs:
+    within_domain_summary: artifacts/benchmark/within_domain_summary.csv
+    cross_domain_summary: artifacts/benchmark/cross_domain_summary.csv
+    monitor_comparison: artifacts/claims/full_data_monitor_comparison.csv
+    primary_oracle_context: artifacts/claims/full_data_primary_oracle_context.csv
+    claim_decision: artifacts/claims/full_data_claim_decision.json
+    target_retuned_oracle_baseline: artifacts/acsac/target_retuned_oracle_baseline.csv
+    fpr_budget_sensitivity: artifacts/acsac/fpr_budget_sensitivity.csv
+    ranking_diagnosis: artifacts/ranking_diagnosis/ranking_diagnosis.csv
+    source_holdout_fpr: artifacts/benchmark/source_holdout_fpr.csv
+    recalibration: artifacts/recalibration/unlabeled_recalibration.csv
+    direction_covariate_shift: artifacts/covariate_shift/direction_covariate_shift.csv
+    coverage_sensitivity: artifacts/coverage_sensitivity/coverage_sensitivity.csv
+    coral_auxiliary: artifacts/da/coral_auxiliary.csv
+  outputs:
+    within_table: paper/tables/within_domain.tex
+    cross_table: paper/tables/cross_domain.tex
+    monitor_table: paper/tables/monitor_comparison.tex
+    primary_table: paper/tables/primary_oracle_context.tex
+    ranking_diagnosis_table: paper/tables/ranking_diagnosis.tex
+    budget_robustness_table: paper/tables/budget_robustness.tex
+    oracle_retuned_summary_table: paper/tables/oracle_retuned_summary.tex
+    coral_auxiliary_table: paper/tables/coral_auxiliary.tex
+    manuscript_numbers: paper/tables/manuscript_numbers.tex
+    manuscript_pdf: paper/manuscript.pdf
+    transfer_tpr_figure_pdf: paper/figures/transfer_tpr.pdf
+    transfer_tpr_figure_png: paper/figures/transfer_tpr.png
+    transfer_fpr_figure_pdf: paper/figures/transfer_fpr.pdf
+    transfer_fpr_figure_png: paper/figures/transfer_fpr.png
+    oracle_figure_pdf: paper/figures/oracle_novelty_primary.pdf
+    oracle_figure_png: paper/figures/oracle_novelty_primary.png
+    monitor_figure_pdf: paper/figures/monitor_comparison.pdf
+    monitor_figure_png: paper/figures/monitor_comparison.png
+
+acsac_assets:
+  inputs:
+    within_domain_summary: artifacts/benchmark/within_domain_summary.csv
+    cross_domain_summary: artifacts/benchmark/cross_domain_summary.csv
+    monitor_comparison: artifacts/claims/full_data_monitor_comparison.csv
+    primary_oracle_context: artifacts/claims/full_data_primary_oracle_context.csv
+    claim_decision: artifacts/claims/full_data_claim_decision.json
+    target_retuned_oracle_baseline: artifacts/acsac/target_retuned_oracle_baseline.csv
+    fpr_budget_sensitivity: artifacts/acsac/fpr_budget_sensitivity.csv
+    ranking_diagnosis: artifacts/ranking_diagnosis/ranking_diagnosis.csv
+    source_holdout_fpr: artifacts/benchmark/source_holdout_fpr.csv
+    recalibration: artifacts/recalibration/unlabeled_recalibration.csv
+    direction_covariate_shift: artifacts/covariate_shift/direction_covariate_shift.csv
+    coverage_sensitivity: artifacts/coverage_sensitivity/coverage_sensitivity.csv
+    coral_auxiliary: artifacts/da/coral_auxiliary.csv
+  outputs:
+    source_table: paper/acsac/tables/source_quality.tex
+    within_table: paper/acsac/tables/within_domain.tex
+    cross_table: paper/acsac/tables/cross_domain_summary.tex
+    monitor_table: paper/acsac/tables/monitor_comparison.tex
+    oracle_table: paper/acsac/tables/oracle_direction.tex
+    collapse_table: paper/acsac/tables/ranking_collapse.tex
+    budget_robustness_table: paper/acsac/tables/budget_robustness.tex
+    oracle_retuned_summary_table: paper/acsac/tables/oracle_retuned_summary.tex
+    coral_auxiliary_table: paper/acsac/tables/coral_auxiliary.tex
+    manuscript_pdf: paper/acsac/manuscript.pdf
+    transfer_tpr_figure_pdf: paper/acsac/figures/transfer_tpr.pdf
+    transfer_tpr_figure_png: paper/acsac/figures/transfer_tpr.png
+    transfer_fpr_figure_pdf: paper/acsac/figures/transfer_fpr.pdf
+    transfer_fpr_figure_png: paper/acsac/figures/transfer_fpr.png
+    oracle_figure_pdf: paper/acsac/figures/oracle_novelty_primary.pdf
+    oracle_figure_png: paper/acsac/figures/oracle_novelty_primary.png

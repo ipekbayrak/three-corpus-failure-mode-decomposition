@@ -1,0 +1,4 @@
+dataset,discarded_source_columns
+IoT-23,"capture_id, source_file"
+ToN-IoT,"dst_ip, dst_port, source_file, src_ip, src_port"
+UNSW-NB15,"id, source_split"

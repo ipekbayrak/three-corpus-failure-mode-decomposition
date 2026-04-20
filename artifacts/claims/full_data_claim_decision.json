@@ -1,0 +1,35 @@
+{
+  "alpha_hat_all_natural_ranks": {
+    "catastrophic_auprc": 2,
+    "catastrophic_auroc": 2,
+    "operational_severity_spearman": 3
+  },
+  "alpha_hat_placement": "main_negative_result",
+  "canonical_run_id": "benchmark_ac1ed34837025ec1",
+  "decision_reason": "alpha_hat did not outperform the strongest audited comparator on the full benchmark and its full-benchmark catastrophic AUROC and severity association remained too weak for a deployable claim.",
+  "deployable_alpha_hat_main_claim": false,
+  "evidence_snapshot": {
+    "all_natural": {
+      "alpha_hat": {
+        "catastrophic_auprc": 0.6961039679767163,
+        "catastrophic_auroc": 0.40336134453781514,
+        "spearman_vs_operational_severity": -0.18375210643650192
+      },
+      "strongest_generic_unlabeled_baseline": "avg_wasserstein_1d"
+    },
+    "primary_iot": {
+      "alpha_hat": {
+        "catastrophic_auprc": 0.8,
+        "catastrophic_auroc": 0.5,
+        "spearman_vs_operational_severity": -0.07793496079856871
+      },
+      "strongest_generic_unlabeled_baseline": "proxy_a_distance|avg_wasserstein_1d"
+    }
+  },
+  "n_all_natural": 24,
+  "n_primary_iot": 8,
+  "proxy_a_promoted_to_main_claim": false,
+  "strongest_audited_monitor_all_natural": "risk_from_source_validation_tpr",
+  "strongest_unlabeled_baseline_all_natural": "avg_wasserstein_1d",
+  "strongest_unlabeled_baseline_primary_iot": "proxy_a_distance|avg_wasserstein_1d"
+}

@@ -1,0 +1,11 @@
+inherits: base.yaml
+
+decision:
+  benchmark_settings_csv: artifacts/benchmark/settings.csv
+  primary_score: alpha_hat
+  baselines:
+    - source_validation_tpr_at_1pct_fpr
+    - proxy_a_distance
+    - avg_wasserstein_1d
+  outputs:
+    decision_csv: artifacts/decision/decision_eval.csv

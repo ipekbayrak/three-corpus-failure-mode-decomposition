@@ -1,0 +1,9 @@
+subset,n_settings,n_catastrophic,n_unsafe,score_name,risk_orientation,spearman_vs_operational_severity,catastrophic_auroc,catastrophic_auprc,spearman_vs_loss_rel,unsafe_auroc,unsafe_auprc,rank_catastrophic_auroc,rank_catastrophic_auprc,rank_spearman_vs_operational_severity,beats_alpha_hat_on_catastrophic_auroc,beats_alpha_hat_on_catastrophic_auprc,beats_alpha_hat_on_operational_severity_spearman
+all_natural,24,17,17,alpha_hat,native_higher_is_more_unsafe,-0.18375210643650192,0.40336134453781514,0.6961039679767163,-0.14660866609091158,0.546218487394958,0.7186487886935456,2,2,3,0,0,0
+all_natural,24,17,17,proxy_a_distance,native_higher_is_more_unsafe,-0.2281667576811819,0.3487394957983193,0.6647058823529411,0.4168024316140396,0.7521008403361344,0.8269607843137254,4,4,4,0,0,0
+all_natural,24,17,17,avg_wasserstein_1d,native_higher_is_more_unsafe,-0.17551289052398605,0.38235294117647056,0.6749999999999999,0.2631506877563216,0.6848739495798319,0.8034313725490195,3,3,2,0,0,1
+all_natural,24,17,17,risk_from_source_validation_tpr,negated_source_validation_tpr_higher_is_more_unsafe,-0.0674120153790717,0.4915966386554622,0.7870416348357525,0.5234148198350157,0.7100840336134454,0.8540679908326967,1,1,1,1,1,1
+primary_iot,8,6,4,alpha_hat,native_higher_is_more_unsafe,-0.07793496079856871,0.5,0.8,-0.38095238095238104,0.5,0.7321428571428572,1,1,3,0,0,0
+primary_iot,8,6,4,proxy_a_distance,native_higher_is_more_unsafe,0.07142857142857142,0.5,0.75,0.4364357804719848,0.75,0.6875,1,3,1,0,0,1
+primary_iot,8,6,4,avg_wasserstein_1d,native_higher_is_more_unsafe,0.07142857142857142,0.5,0.75,0.4364357804719848,0.75,0.6875,1,3,1,0,0,1
+primary_iot,8,6,4,risk_from_source_validation_tpr,negated_source_validation_tpr_higher_is_more_unsafe,-0.29615285103456107,0.3333333333333333,0.7579365079365079,0.523809523809524,0.875,0.8875,4,2,4,0,0,0

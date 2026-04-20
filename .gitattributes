@@ -1,0 +1,8 @@
+artifacts/aux_native/staged/iot23_native_features.csv filter=lfs diff=lfs merge=lfs -text
+artifacts/benchmark/predictions.csv filter=lfs diff=lfs merge=lfs -text
+artifacts/benchmark_ft/predictions.csv filter=lfs diff=lfs merge=lfs -text
+artifacts/benchmark_smoke/predictions.csv filter=lfs diff=lfs merge=lfs -text
+artifacts/manifests/feature_manifest.csv filter=lfs diff=lfs merge=lfs -text
+artifacts/manifests/split_manifest.csv filter=lfs diff=lfs merge=lfs -text
+artifacts/processed/feature_schema_v1/iot23_feature_schema_v1.csv filter=lfs diff=lfs merge=lfs -text
+artifacts/raw/iot23/staged.csv filter=lfs diff=lfs merge=lfs -text

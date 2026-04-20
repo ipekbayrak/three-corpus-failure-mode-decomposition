@@ -1,0 +1,24 @@
+inherits: base.yaml
+
+benchmark:
+  models:
+    - logistic_regression
+    - extra_trees
+    - hist_gradient_boosting
+    - mlp
+  transfer_threshold_fpr: 0.01
+  bootstrap:
+    n_boot: 2000
+    seed: 20260414
+  directions:
+    - [iot23, ton_iot]
+    - [iot23, unsw_nb15]
+    - [ton_iot, iot23]
+    - [ton_iot, unsw_nb15]
+    - [unsw_nb15, iot23]
+    - [unsw_nb15, ton_iot]
+  outputs:
+    predictions_csv: artifacts/benchmark/predictions.csv
+    settings_csv: artifacts/benchmark/settings.csv
+    within_domain_summary_csv: artifacts/benchmark/within_domain_summary.csv
+    cross_domain_summary_csv: artifacts/benchmark/cross_domain_summary.csv

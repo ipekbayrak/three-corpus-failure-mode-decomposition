@@ -1,0 +1,11 @@
+primitive_field,iot23,ton_iot,unsw_nb15
+record_id,uid; fallback capture_id:row_index,synthetic ton_iot:row_index,source_split:id
+group_id,capture_id|id.orig_h|id.orig_p|id.resp_h|id.resp_p|proto; fallback record_id,src_ip|src_port|dst_ip|dst_port|proto,record_id
+label,label; fallback family_raw-derived binary label,label,label
+family_raw,detailed-label or multi-label; fallback label,type,attack_cat
+proto,proto; fallback proto_tcp/proto_udp/proto_icmp indicators,proto,proto
+duration_s,duration or dur,duration,dur
+src_bytes,orig_bytes or src_bytes or sbytes,src_bytes,sbytes
+dst_bytes,resp_bytes or dst_bytes or dbytes,dst_bytes,dbytes
+src_pkts,orig_pkts or src_pkts or spkts,src_pkts,spkts
+dst_pkts,resp_pkts or dst_pkts or dpkts,dst_pkts,dpkts

@@ -1,0 +1,2474 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+
+import matplotlib.patheffects as path_effects
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+DATASET_LABELS = {
+    "iot23": "IoT-23",
+    "ton_iot": "ToN-IoT",
+    "unsw_nb15": "UNSW-NB15",
+}
+
+DATASET_SHORT = {
+    "iot23": "I23",
+    "ton_iot": "TON",
+    "unsw_nb15": "UNSW",
+}
+
+MODEL_LABELS = {
+    "logistic_regression": "LR",
+    "extra_trees": "ET",
+    "hist_gradient_boosting": "HGB",
+    "mlp": "MLP",
+    "ft_transformer": "FTT",
+}
+
+MODEL_MARKERS = {
+    "logistic_regression": "o",
+    "extra_trees": "s",
+    "hist_gradient_boosting": "^",
+    "mlp": "D",
+    "ft_transformer": "P",
+}
+
+MONITOR_LABELS = {
+    "alpha_hat": r"$\hat{\alpha}$",
+    "proxy_a_distance": "proxy-A",
+    "avg_wasserstein_1d": "Wasserstein",
+    "risk_from_source_validation_tpr": "source-val risk",
+}
+
+MONITOR_COLORS = {
+    "alpha_hat": "#222222",
+    "proxy_a_distance": "#1f77b4",
+    "avg_wasserstein_1d": "#2a9d8f",
+    "risk_from_source_validation_tpr": "#c47f17",
+}
+
+DIRECTION_ORDER = [
+    ("iot23", "ton_iot"),
+    ("iot23", "unsw_nb15"),
+    ("ton_iot", "iot23"),
+    ("ton_iot", "unsw_nb15"),
+    ("unsw_nb15", "iot23"),
+    ("unsw_nb15", "ton_iot"),
+]
+
+MODEL_ORDER = [
+    "logistic_regression",
+    "extra_trees",
+    "hist_gradient_boosting",
+    "mlp",
+    "ft_transformer",
+]
+
+SOURCE_COMPETENCE_TPR_FLOOR = 0.10
+SOURCE_COMPETENCE_FPR_CEILING = 0.05
+FROZEN_FPR_BUDGET = 0.01
+SATURATED_THRESHOLD_TOP = 1.0
+SATURATED_THRESHOLD_TOL = 1e-9
+
+SUBSET_ORDER = ["all_natural", "primary_iot"]
+MONITOR_ORDER = [
+    "alpha_hat",
+    "proxy_a_distance",
+    "avg_wasserstein_1d",
+    "risk_from_source_validation_tpr",
+]
+
+DIAGNOSIS_ORDER = [
+    "ranking_collapse",
+    "ranking_degraded",
+    "threshold_drift",
+    "noncollapsed_low_tpr_loss",
+]
+
+DIAGNOSIS_LABELS = {
+    "ranking_collapse": "Ranking collapse",
+    "ranking_degraded": "Ranking degraded",
+    "threshold_drift": "Threshold drift",
+    "noncollapsed_low_tpr_loss": "Non-collapsed, low TPR loss",
+}
+
+DIAGNOSIS_CRITERIA = {
+    "ranking_collapse": r"AUROC $\leq$ 0.50",
+    "ranking_degraded": r"0.50 $<$ AUROC $<$ 0.60",
+    "threshold_drift": r"AUROC $\geq$ 0.60; drop $>$ 0.50",
+    "noncollapsed_low_tpr_loss": r"AUROC $\geq$ 0.60; drop $\leq$ 0.50",
+}
+
+
+@dataclass(frozen=True)
+class ManuscriptSources:
+    within_domain_summary: Path
+    cross_domain_summary: Path
+    monitor_comparison: Path
+    primary_oracle_context: Path
+    claim_decision: Path
+    target_retuned_oracle_baseline: Path
+    fpr_budget_sensitivity: Path
+    ranking_diagnosis: Path
+    source_holdout_fpr: Path
+    recalibration: Path
+    direction_covariate_shift: Path
+    coverage_sensitivity: Path
+    coral_auxiliary: Path
+
+
+@dataclass(frozen=True)
+class ManuscriptOutputs:
+    within_table: Path
+    cross_table: Path
+    monitor_table: Path
+    primary_table: Path
+    ranking_diagnosis_table: Path
+    budget_robustness_table: Path
+    oracle_retuned_summary_table: Path
+    coral_auxiliary_table: Path
+    manuscript_numbers: Path
+    transfer_tpr_figure_pdf: Path
+    transfer_tpr_figure_png: Path
+    transfer_fpr_figure_pdf: Path
+    transfer_fpr_figure_png: Path
+    oracle_figure_pdf: Path
+    oracle_figure_png: Path
+    monitor_figure_pdf: Path
+    monitor_figure_png: Path
+
+
+@dataclass(frozen=True)
+class AcsacOutputs:
+    source_table: Path
+    within_table: Path
+    cross_table: Path
+    monitor_table: Path
+    oracle_table: Path
+    collapse_table: Path
+    budget_robustness_table: Path
+    oracle_retuned_summary_table: Path
+    coral_auxiliary_table: Path
+    transfer_tpr_figure_pdf: Path
+    transfer_tpr_figure_png: Path
+    transfer_fpr_figure_pdf: Path
+    transfer_fpr_figure_png: Path
+    oracle_figure_pdf: Path
+    oracle_figure_png: Path
+
+
+def _format_metric(value: float, digits: int = 3) -> str:
+    return f"{float(value):.{digits}f}"
+
+
+def _format_metric_ci(
+    value: float,
+    ci_lo: float,
+    ci_hi: float,
+    digits: int = 3,
+) -> str:
+    if np.isnan(ci_lo) or np.isnan(ci_hi):
+        return _format_metric(value, digits=digits)
+    return (
+        f"{_format_metric(value, digits=digits)} "
+        f"[{_format_metric(ci_lo, digits=digits)}, {_format_metric(ci_hi, digits=digits)}]"
+    )
+
+
+def _format_scope(value: str) -> str:
+    return "primary" if value == "primary" else "stress-test"
+
+
+def _latex_wrap_table(
+    body: str,
+    caption: str,
+    label: str,
+    font_size: str = r"\footnotesize",
+    resize: bool = False,
+    tabcolsep: str = "4pt",
+) -> str:
+    tabular = body.rstrip()
+    if resize:
+        tabular = "\n".join(
+            [
+                r"\resizebox{\textwidth}{!}{%",
+                tabular,
+                r"}",
+            ]
+        )
+    return "\n".join(
+        [
+            "% Generated by scripts/41_build_manuscript_assets.py",
+            r"\begin{table}[htbp]",
+            r"\centering",
+            font_size,
+            rf"\setlength{{\tabcolsep}}{{{tabcolsep}}}",
+            rf"\caption{{{caption}}}",
+            rf"\label{{{label}}}",
+            tabular,
+            r"\end{table}",
+            "",
+        ]
+    )
+
+
+def _write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _escape_latex_text(value: str) -> str:
+    return (
+        value.replace("\\", r"\textbackslash{}")
+        .replace("_", r"\_")
+        .replace("%", r"\%")
+        .replace("&", r"\&")
+        .replace("#", r"\#")
+    )
+
+
+def _macro_line(name: str, value: str) -> str:
+    return rf"\newcommand{{\{name}}}{{{value}}}"
+
+
+def _format_threshold(value: float) -> str:
+    return f"{float(value):.6f}".rstrip("0").rstrip(".")
+
+
+def _source_competence_frame(
+    ranking_diagnosis: pd.DataFrame,
+    source_holdout_fpr: pd.DataFrame,
+) -> pd.DataFrame:
+    ranking_source = (
+        ranking_diagnosis[
+            [
+                "source_dataset",
+                "model",
+                "source_holdout_auroc",
+                "source_holdout_tpr",
+            ]
+        ]
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
+    fpr_frame = source_holdout_fpr.rename(columns={"dataset": "source_dataset"}).copy()
+    merged = ranking_source.merge(
+        fpr_frame[
+            [
+                "source_dataset",
+                "model",
+                "threshold",
+                "source_holdout_realized_fpr",
+                "source_holdout_realized_fpr_ci_lo",
+                "source_holdout_realized_fpr_ci_hi",
+            ]
+        ],
+        on=["source_dataset", "model"],
+        how="left",
+        validate="one_to_one",
+    )
+    if merged["source_holdout_realized_fpr"].isnull().any():
+        missing = merged.loc[
+            merged["source_holdout_realized_fpr"].isnull(),
+            ["source_dataset", "model"],
+        ]
+        raise ValueError(
+            "Missing source-holdout FPR rows for competence filtering: "
+            f"{missing.to_dict(orient='records')}"
+        )
+
+    merged["threshold_saturated_top"] = (
+        merged["threshold"].astype(float) >= (SATURATED_THRESHOLD_TOP - SATURATED_THRESHOLD_TOL)
+    ).astype(int)
+    merged["low_tpr"] = (
+        merged["source_holdout_tpr"].astype(float) < SOURCE_COMPETENCE_TPR_FLOOR
+    ).astype(int)
+    merged["high_fpr"] = (
+        merged["source_holdout_realized_fpr"].astype(float) > SOURCE_COMPETENCE_FPR_CEILING
+    ).astype(int)
+    merged["saturated_budget_violation"] = (
+        merged["threshold_saturated_top"].astype(bool)
+        & (merged["source_holdout_realized_fpr"].astype(float) > FROZEN_FPR_BUDGET)
+    ).astype(int)
+    merged["is_competent"] = (
+        ~(
+            merged["low_tpr"].astype(bool)
+            | merged["high_fpr"].astype(bool)
+            | merged["saturated_budget_violation"].astype(bool)
+        )
+    ).astype(int)
+    merged["competence_reason"] = np.select(
+        [
+            merged["low_tpr"].astype(bool),
+            merged["high_fpr"].astype(bool),
+            merged["saturated_budget_violation"].astype(bool),
+        ],
+        [
+            "source_holdout_tpr_below_floor",
+            "source_holdout_fpr_above_ceiling",
+            "threshold_saturated_with_budget_violation",
+        ],
+        default="competent",
+    )
+    return merged.sort_values(["source_dataset", "model"]).reset_index(drop=True)
+
+
+def _competent_source_pairs(
+    ranking_diagnosis: pd.DataFrame,
+    source_holdout_fpr: pd.DataFrame,
+) -> set[tuple[str, str]]:
+    competence = _source_competence_frame(ranking_diagnosis, source_holdout_fpr)
+    return {
+        (str(row.source_dataset), str(row.model))
+        for row in competence.itertuples(index=False)
+        if int(row.is_competent) == 1
+    }
+
+
+def _filter_competent_source_rows(
+    frame: pd.DataFrame,
+    competent_pairs: set[tuple[str, str]],
+) -> pd.DataFrame:
+    mask = frame.apply(
+        lambda row: (str(row["source_dataset"]), str(row["model"])) in competent_pairs,
+        axis=1,
+    )
+    return frame.loc[mask].copy()
+
+
+def _dataframe_to_latex(
+    frame: pd.DataFrame,
+    alignment: str | None = None,
+    midrule_after: set[int] | None = None,
+) -> str:
+    if alignment is None:
+        alignment = "l" * len(frame.columns)
+    header = " & ".join(map(str, frame.columns)) + r" \\"
+    rows: list[str] = []
+    midrule_after = midrule_after or set()
+    for row_index, row in enumerate(frame.itertuples(index=False, name=None)):
+        rows.append(" & ".join(map(str, row)) + r" \\")
+        if row_index in midrule_after:
+            rows.append(r"\midrule")
+    return "\n".join(
+        [
+            rf"\begin{{tabular}}{{{alignment}}}",
+            r"\toprule",
+            header,
+            r"\midrule",
+            *rows,
+            r"\bottomrule",
+            r"\end{tabular}",
+        ]
+    )
+
+
+def _budget_macro_stem(budget: float) -> str:
+    if np.isclose(budget, 0.005):
+        return "BudgetHalfPct"
+    if np.isclose(budget, 0.01):
+        return "BudgetOnePct"
+    if np.isclose(budget, 0.05):
+        return "BudgetFivePct"
+    percent = int(round(float(budget) * 1000))
+    return f"Budget{percent}Permille"
+
+
+def _budget_label(budget: float) -> str:
+    if np.isclose(budget, 0.005):
+        return r"0.5\%"
+    if np.isclose(budget, 0.01):
+        return r"1\%"
+    if np.isclose(budget, 0.05):
+        return r"5\%"
+    return rf"{float(budget) * 100:.2f}\%"
+
+
+def _competent_budget_summary(
+    budget_sensitivity: pd.DataFrame,
+    competent_pairs: set[tuple[str, str]],
+) -> pd.DataFrame:
+    frame = _filter_competent_source_rows(budget_sensitivity, competent_pairs).copy()
+    budget_order = [float(value) for value in pd.unique(frame["fpr_budget"].astype(float))]
+    rows: list[dict[str, object]] = []
+    for budget in budget_order:
+        subset = frame.loc[np.isclose(frame["fpr_budget"].astype(float), budget)].copy()
+        rows.append(
+            {
+                "budget": float(budget),
+                "Budget": _budget_label(float(budget)),
+                "n_settings": int(len(subset)),
+                "median_source_holdout_tpr": float(subset["source_holdout_tpr_at_budget"].median()),
+                "median_target_tpr": float(subset["target_tpr_at_budget"].median()),
+                "median_target_realized_fpr": float(subset["target_realized_fpr"].median()),
+                "median_budget_multiple": float(subset["fpr_budget_multiple"].median()),
+                "catastrophic_count": int(subset["catastrophic_operational_failure"].sum()),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _budget_driver_directions(
+    budget_sensitivity: pd.DataFrame,
+    competent_pairs: set[tuple[str, str]],
+    budget: float,
+    *,
+    top_n: int = 1,
+) -> list[str]:
+    frame = _filter_competent_source_rows(budget_sensitivity, competent_pairs).copy()
+    subset = frame.loc[np.isclose(frame["fpr_budget"].astype(float), float(budget))].copy()
+    summary = (
+        subset.groupby(["source_dataset", "target_dataset"], as_index=False)
+        .agg(median_budget_multiple=("fpr_budget_multiple", "median"))
+        .sort_values("median_budget_multiple", ascending=False)
+        .reset_index(drop=True)
+    )
+    return [
+        _latex_direction_label(str(row.source_dataset), str(row.target_dataset))
+        for row in summary.head(top_n).itertuples(index=False)
+    ]
+
+
+def _join_direction_labels(labels: list[str]) -> str:
+    if not labels:
+        return ""
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return f"{labels[0]} and {labels[1]}"
+    return ", ".join(labels[:-1]) + f", and {labels[-1]}"
+
+
+def _coral_method_competent_summary(
+    coral_auxiliary: pd.DataFrame,
+    competent_pairs: set[tuple[str, str]],
+    *,
+    auxiliary_method: str,
+) -> pd.Series:
+    frame = _filter_competent_source_rows(coral_auxiliary, competent_pairs).copy()
+    frame = frame.loc[frame["auxiliary_method"].astype(str) == auxiliary_method].copy()
+    if frame.empty:
+        raise ValueError(
+            f"CORAL auxiliary summary is empty after competence filtering for {auxiliary_method}"
+        )
+    summary = {
+        "n_settings": int(len(frame)),
+        "ranking_failure_count": int((frame["target_auroc"].astype(float) < 0.60).sum()),
+        "median_target_auroc": float(frame["target_auroc"].astype(float).median()),
+        "median_target_pauc": float(frame["target_pauc_at_1pct"].astype(float).median()),
+        "median_budget_multiple": float(frame["fpr_budget_multiple"].astype(float).median()),
+        "catastrophic_count": int(frame["catastrophic_operational_failure"].astype(int).sum()),
+    }
+    return pd.Series(summary)
+
+
+def _build_numbers_macros(
+    within: pd.DataFrame,
+    cross: pd.DataFrame,
+    monitor: pd.DataFrame,
+    primary: pd.DataFrame,
+    decision: dict[str, object],
+    target_retuned: pd.DataFrame,
+    budget_sensitivity: pd.DataFrame,
+    ranking_diagnosis: pd.DataFrame,
+    source_holdout_fpr: pd.DataFrame,
+    recalibration: pd.DataFrame,
+    direction_covariate_shift: pd.DataFrame,
+    coverage_sensitivity: pd.DataFrame,
+    coral_auxiliary: pd.DataFrame,
+) -> str:
+    all_natural = monitor.loc[monitor["subset"] == "all_natural"].copy()
+    primary_iot = monitor.loc[monitor["subset"] == "primary_iot"].copy()
+    direction_level = (
+        cross.groupby(["source_dataset", "target_dataset"], as_index=False)
+        .agg(
+            mean_oracle_alpha=("oracle_alpha", "mean"),
+            mean_relative_tpr_drop=("relative_tpr_drop", "mean"),
+        )
+        .sort_values(["source_dataset", "target_dataset"])
+        .reset_index(drop=True)
+    )
+    primary_direction = (
+        primary.groupby(["source_dataset", "target_dataset"], as_index=False)
+        .agg(
+            oracle_alpha=("oracle_alpha", "mean"),
+            relative_tpr_drop=("relative_tpr_drop", "mean"),
+            target_tpr_at_1pct_fpr=("target_tpr_at_1pct_fpr", "mean"),
+            target_realized_fpr=("target_realized_fpr", "mean"),
+        )
+        .sort_values(["source_dataset", "target_dataset"])
+        .reset_index(drop=True)
+    )
+
+    iot_to_ton = primary_direction.loc[
+        (primary_direction["source_dataset"] == "iot23")
+        & (primary_direction["target_dataset"] == "ton_iot")
+    ].iloc[0]
+    ton_to_iot = primary_direction.loc[
+        (primary_direction["source_dataset"] == "ton_iot")
+        & (primary_direction["target_dataset"] == "iot23")
+    ].iloc[0]
+
+    alpha_all = all_natural.loc[all_natural["score_name"] == "alpha_hat"].iloc[0]
+    proxy_all = all_natural.loc[all_natural["score_name"] == "proxy_a_distance"].iloc[0]
+    water_all = all_natural.loc[all_natural["score_name"] == "avg_wasserstein_1d"].iloc[0]
+    risk_all = all_natural.loc[
+        all_natural["score_name"] == "risk_from_source_validation_tpr"
+    ].iloc[0]
+
+    alpha_primary = primary_iot.loc[primary_iot["score_name"] == "alpha_hat"].iloc[0]
+    risk_primary = primary_iot.loc[
+        primary_iot["score_name"] == "risk_from_source_validation_tpr"
+    ].iloc[0]
+
+    primary_spearman = float(
+        primary["oracle_alpha"].rank(method="average").corr(
+            primary["relative_tpr_drop"].rank(method="average")
+        )
+    )
+    direction_oracle_spearman = float(
+        direction_level["mean_oracle_alpha"].corr(
+            direction_level["mean_relative_tpr_drop"], method="spearman"
+        )
+    )
+    retuned_direction = _retuned_direction_summary(target_retuned)
+    iot_to_ton_retuned = retuned_direction.loc[
+        (retuned_direction["source_dataset"] == "iot23")
+        & (retuned_direction["target_dataset"] == "ton_iot")
+    ].iloc[0]
+    ton_to_iot_retuned = retuned_direction.loc[
+        (retuned_direction["source_dataset"] == "ton_iot")
+        & (retuned_direction["target_dataset"] == "iot23")
+    ].iloc[0]
+    budget_half = budget_sensitivity.loc[np.isclose(budget_sensitivity["fpr_budget"], 0.005)]
+    budget_one = budget_sensitivity.loc[np.isclose(budget_sensitivity["fpr_budget"], 0.01)]
+    budget_five = budget_sensitivity.loc[np.isclose(budget_sensitivity["fpr_budget"], 0.05)]
+    competence = _source_competence_frame(ranking_diagnosis, source_holdout_fpr)
+    competent_pairs = {
+        (str(row.source_dataset), str(row.model))
+        for row in competence.itertuples(index=False)
+        if int(row.is_competent) == 1
+    }
+    competent_ranking = _filter_competent_source_rows(ranking_diagnosis, competent_pairs)
+    competent_noncollapsed = competent_ranking.loc[
+        competent_ranking["target_auroc"] >= 0.60
+    ].copy()
+    competent_iot_only = competent_ranking.loc[
+        (
+            (competent_ranking["source_dataset"] == "iot23")
+            & (competent_ranking["target_dataset"] == "ton_iot")
+        )
+        | (
+            (competent_ranking["source_dataset"] == "ton_iot")
+            & (competent_ranking["target_dataset"] == "iot23")
+        )
+    ].copy()
+    competent_unsw_related = competent_ranking.loc[
+        (competent_ranking["source_dataset"] == "unsw_nb15")
+        | (competent_ranking["target_dataset"] == "unsw_nb15")
+    ].copy()
+    competent_cross = _filter_competent_source_rows(cross, competent_pairs)
+    competent_source = competence.loc[competence["is_competent"] == 1].copy()
+    competent_budget = _competent_budget_summary(budget_sensitivity, competent_pairs)
+    coral_competent = _coral_method_competent_summary(
+        coral_auxiliary,
+        competent_pairs,
+        auxiliary_method="coral",
+    )
+    budget_half_driver = _join_direction_labels(
+        _budget_driver_directions(budget_sensitivity, competent_pairs, 0.005, top_n=1)
+    )
+    budget_one_driver = _join_direction_labels(
+        _budget_driver_directions(budget_sensitivity, competent_pairs, 0.01, top_n=1)
+    )
+    budget_five_drivers = _join_direction_labels(
+        _budget_driver_directions(budget_sensitivity, competent_pairs, 0.05, top_n=2)
+    )
+    threshold_drift_count = int((ranking_diagnosis["diagnosis"] == "threshold_drift").sum())
+    unsw_target_rows = ranking_diagnosis.loc[
+        ranking_diagnosis["target_dataset"] == "unsw_nb15"
+    ].copy()
+    ton_to_iot_rows = ranking_diagnosis.loc[
+        (ranking_diagnosis["source_dataset"] == "ton_iot")
+        & (ranking_diagnosis["target_dataset"] == "iot23")
+    ].copy()
+    iot_pair_shift = direction_covariate_shift.loc[
+        (direction_covariate_shift["source_dataset"] == "iot23")
+        & (direction_covariate_shift["target_dataset"] == "ton_iot")
+    ].iloc[0]
+    unsw_direction_shift = direction_covariate_shift.loc[
+        (direction_covariate_shift["source_dataset"] == "unsw_nb15")
+        | (direction_covariate_shift["target_dataset"] == "unsw_nb15")
+    ].copy()
+    benign_ks_fpr_spearman = float(
+        direction_covariate_shift["mean_ks"].corr(
+            direction_covariate_shift["mean_fpr_severity"], method="spearman"
+        )
+    )
+    positive_coverage = coverage_sensitivity.loc[coverage_sensitivity["n_settings"] > 0].copy()
+    empty_coverage = coverage_sensitivity.loc[coverage_sensitivity["n_settings"] == 0].copy()
+    if positive_coverage.empty or empty_coverage.empty:
+        raise ValueError(
+            "Coverage sensitivity artifacts must include both non-empty and empty subset rows."
+        )
+    recalibration_score_ks = recalibration["calibration_eval_score_ks"].dropna()
+    recalibration_eval_fpr = recalibration["recal_fpr"].dropna()
+    competent_ranking_failure_count = int((competent_ranking["target_auroc"] < 0.60).sum())
+    competent_collapse_count = int((competent_ranking["target_auroc"] <= 0.50).sum())
+    competent_inversion_count = int((competent_ranking["target_auroc"] < 0.50).sum())
+    competent_robust_inversion_count = int(
+        (
+            (competent_ranking["target_auroc"].astype(float) < 0.50)
+            & (competent_ranking["target_auroc_ci_hi"].astype(float) < 0.50)
+        ).sum()
+    )
+    competent_source_positive_median_gap_count = int(
+        (competent_ranking["source_holdout_median_score_gap"].astype(float) > 0.0).sum()
+    )
+    competent_inversion_median_crossover_count = int(
+        (
+            (competent_ranking["target_auroc"].astype(float) < 0.50)
+            & (competent_ranking["target_median_score_gap"].astype(float) <= 0.0)
+        ).sum()
+    )
+    competent_iot_only_ranking_failure_count = int(
+        (competent_iot_only["target_auroc"] < 0.60).sum()
+    )
+    competent_iot_only_noncollapsed_count = int(
+        (competent_iot_only["target_auroc"] >= 0.60).sum()
+    )
+    competent_unsw_related_ranking_failure_count = int(
+        (competent_unsw_related["target_auroc"] < 0.60).sum()
+    )
+    full_ranking_failure_count = int((ranking_diagnosis["target_auroc"] < 0.60).sum())
+    full_collapse_count = int((ranking_diagnosis["target_auroc"] <= 0.50).sum())
+    full_inversion_count = int((ranking_diagnosis["target_auroc"] < 0.50).sum())
+    full_robust_inversion_count = int(
+        (
+            (ranking_diagnosis["target_auroc"].astype(float) < 0.50)
+            & (ranking_diagnosis["target_auroc_ci_hi"].astype(float) < 0.50)
+        ).sum()
+    )
+    full_source_positive_median_gap_count = int(
+        (ranking_diagnosis["source_holdout_median_score_gap"].astype(float) > 0.0).sum()
+    )
+    full_inversion_median_crossover_count = int(
+        (
+            (ranking_diagnosis["target_auroc"].astype(float) < 0.50)
+            & (ranking_diagnosis["target_median_score_gap"].astype(float) <= 0.0)
+        ).sum()
+    )
+    unsw_target_ranking_failure_count = int((unsw_target_rows["target_auroc"] < 0.60).sum())
+    ton_to_iot_ranking_failure_count = int((ton_to_iot_rows["target_auroc"] < 0.60).sum())
+
+    macros = [
+        "% Generated by scripts/41_build_manuscript_assets.py",
+        _macro_line("FrozenFprTarget", r"1\%"),
+        _macro_line("NoveltyCoverageFloor", "0.80"),
+        _macro_line("SourceCompetenceTprFloor", _format_metric(SOURCE_COMPETENCE_TPR_FLOOR, 2)),
+        _macro_line("SourceCompetenceFprCeiling", _format_metric(SOURCE_COMPETENCE_FPR_CEILING, 2)),
+        _macro_line("DatasetCount", str(within["dataset"].nunique())),
+        _macro_line(
+            "DirectionCount",
+            str(cross[["source_dataset", "target_dataset"]].drop_duplicates().shape[0]),
+        ),
+        _macro_line("ModelCount", str(within["model"].nunique())),
+        _macro_line("NaturalSettingCount", str(len(cross))),
+        _macro_line("PrimaryIotSettingCount", str(len(primary))),
+        _macro_line("CompetentSourcePairCount", str(len(competent_source))),
+        _macro_line(
+            "NonCompetentSourcePairCount",
+            str(int((competence["is_competent"] == 0).sum())),
+        ),
+        _macro_line("CompetentSettingCount", str(len(competent_ranking))),
+        _macro_line("CompetentRankingFailureCount", str(competent_ranking_failure_count)),
+        _macro_line("CompetentCollapseCount", str(competent_collapse_count)),
+        _macro_line("CompetentInversionCount", str(competent_inversion_count)),
+        _macro_line("CompetentRobustInversionCount", str(competent_robust_inversion_count)),
+        _macro_line(
+            "CompetentSourcePositiveMedianGapCount",
+            str(competent_source_positive_median_gap_count),
+        ),
+        _macro_line(
+            "CompetentInversionMedianCrossoverCount",
+            str(competent_inversion_median_crossover_count),
+        ),
+        _macro_line("CompetentIotOnlySettingCount", str(len(competent_iot_only))),
+        _macro_line(
+            "CompetentIotOnlyRankingFailureCount",
+            str(competent_iot_only_ranking_failure_count),
+        ),
+        _macro_line(
+            "CompetentIotOnlyNonCollapsedCount",
+            str(competent_iot_only_noncollapsed_count),
+        ),
+        _macro_line(
+            "CompetentUnswStressTestSettingCount",
+            str(len(competent_unsw_related)),
+        ),
+        _macro_line(
+            "CompetentUnswStressTestRankingFailureCount",
+            str(competent_unsw_related_ranking_failure_count),
+        ),
+        _macro_line("FullRankingFailureCount", str(full_ranking_failure_count)),
+        _macro_line("FullCollapseCount", str(full_collapse_count)),
+        _macro_line("FullInversionCount", str(full_inversion_count)),
+        _macro_line("FullRobustInversionCount", str(full_robust_inversion_count)),
+        _macro_line(
+            "FullSourcePositiveMedianGapCount",
+            str(full_source_positive_median_gap_count),
+        ),
+        _macro_line(
+            "FullInversionMedianCrossoverCount",
+            str(full_inversion_median_crossover_count),
+        ),
+        _macro_line("ThresholdDriftCount", str(threshold_drift_count)),
+        _macro_line("UnswTargetSettingCount", str(len(unsw_target_rows))),
+        _macro_line(
+            "UnswTargetRankingFailureCount",
+            str(unsw_target_ranking_failure_count),
+        ),
+        _macro_line(
+            "TonToIotRankingFailureCount",
+            str(ton_to_iot_ranking_failure_count),
+        ),
+        _macro_line(
+            "CompetentMinTargetAuroc",
+            _format_metric(competent_ranking["target_auroc"].min()),
+        ),
+        _macro_line(
+            "CompetentMaxTargetAuroc",
+            _format_metric(competent_ranking["target_auroc"].max()),
+        ),
+        _macro_line(
+            "CompetentTargetPaucMedian",
+            _format_metric(competent_ranking["target_pauc_at_1pct"].median()),
+        ),
+        _macro_line(
+            "CompetentTargetPaucMin",
+            _format_metric(competent_ranking["target_pauc_at_1pct"].min()),
+        ),
+        _macro_line(
+            "CompetentTargetPaucMax",
+            _format_metric(competent_ranking["target_pauc_at_1pct"].max()),
+        ),
+        _macro_line(
+            "CompetentSourcePaucMedian",
+            _format_metric(competent_ranking["source_holdout_pauc_at_1pct"].median()),
+        ),
+        _macro_line("CompetentNonCollapsedCount", str(len(competent_noncollapsed))),
+        _macro_line(
+            "CompetentNonCollapsedTargetPaucMin",
+            _format_metric(competent_noncollapsed["target_pauc_at_1pct"].min()),
+        ),
+        _macro_line(
+            "CompetentNonCollapsedTargetPaucMax",
+            _format_metric(competent_noncollapsed["target_pauc_at_1pct"].max()),
+        ),
+        _macro_line(
+            "CompetentNonCollapsedSourcePaucMedian",
+            _format_metric(competent_noncollapsed["source_holdout_pauc_at_1pct"].median()),
+        ),
+        _macro_line(
+            "CompetentMedianTargetTpr",
+            _format_metric(competent_cross["target_tpr_at_1pct_fpr"].median()),
+        ),
+        _macro_line(
+            "CompetentMedianRealizedFpr",
+            _format_metric(competent_cross["target_realized_fpr"].median()),
+        ),
+        _macro_line(
+            "CompetentSourceFprMin",
+            _format_metric(competent_source["source_holdout_realized_fpr"].min()),
+        ),
+        _macro_line(
+            "CompetentSourceFprMax",
+            _format_metric(competent_source["source_holdout_realized_fpr"].max()),
+        ),
+        _macro_line(
+            "RecalibrationEvalFprMax",
+            _format_metric(recalibration_eval_fpr.max()),
+        ),
+        _macro_line(
+            "RecalibrationEvalFprExceedanceCount",
+            str(int(recalibration["eval_fpr_exceeds_budget"].fillna(0).astype(int).sum())),
+        ),
+        _macro_line(
+            "RecalibrationPartitionScoreKsMedian",
+            _format_metric(recalibration_score_ks.median()),
+        ),
+        _macro_line(
+            "RecalibrationPartitionScoreKsMax",
+            _format_metric(recalibration_score_ks.max()),
+        ),
+        _macro_line(
+            "CatastrophicAllNaturalCount",
+            str(int(all_natural["n_catastrophic"].iloc[0])),
+        ),
+        _macro_line(
+            "CatastrophicPrimaryIotCount",
+            str(int(primary_iot["n_catastrophic"].iloc[0])),
+        ),
+        _macro_line(
+            "WithinHoldoutMin",
+            _format_metric(within["source_holdout_tpr_at_1pct_fpr"].min()),
+        ),
+        _macro_line(
+            "WithinHoldoutMax",
+            _format_metric(within["source_holdout_tpr_at_1pct_fpr"].max()),
+        ),
+        _macro_line(
+            "AllNaturalMedianTargetTpr",
+            _format_metric(cross["target_tpr_at_1pct_fpr"].median()),
+        ),
+        _macro_line(
+            "AllNaturalMedianRealizedFpr",
+            _format_metric(cross["target_realized_fpr"].median()),
+        ),
+        _macro_line(
+            "AllNaturalMinTargetTpr",
+            _format_metric(cross["target_tpr_at_1pct_fpr"].min()),
+        ),
+        _macro_line(
+            "AllNaturalMaxTargetTpr",
+            _format_metric(cross["target_tpr_at_1pct_fpr"].max()),
+        ),
+        _macro_line(
+            "AllNaturalMinRealizedFpr",
+            _format_metric(cross["target_realized_fpr"].min()),
+        ),
+        _macro_line(
+            "AllNaturalMaxRealizedFpr",
+            _format_metric(cross["target_realized_fpr"].max()),
+        ),
+        _macro_line("PrimaryOracleSpearman", _format_metric(primary_spearman)),
+        _macro_line("DirectionOracleSpearman", _format_metric(direction_oracle_spearman)),
+        _macro_line(
+            "DirectionBenignKsFprSeveritySpearman",
+            _format_metric(benign_ks_fpr_spearman),
+        ),
+        _macro_line("IotToTonOracleAlpha", _format_metric(iot_to_ton["oracle_alpha"])),
+        _macro_line(
+            "IotToTonMeanRelativeTprDrop",
+            _format_metric(iot_to_ton["relative_tpr_drop"]),
+        ),
+        _macro_line(
+            "IotToTonMeanTargetTpr",
+            _format_metric(iot_to_ton["target_tpr_at_1pct_fpr"]),
+        ),
+        _macro_line(
+            "IotToTonMeanRealizedFpr",
+            _format_metric(iot_to_ton["target_realized_fpr"]),
+        ),
+        _macro_line("TonToIotOracleAlpha", _format_metric(ton_to_iot["oracle_alpha"])),
+        _macro_line(
+            "TonToIotMeanRelativeTprDrop",
+            _format_metric(ton_to_iot["relative_tpr_drop"]),
+        ),
+        _macro_line(
+            "TonToIotMeanTargetTpr",
+            _format_metric(ton_to_iot["target_tpr_at_1pct_fpr"]),
+        ),
+        _macro_line(
+            "TonToIotMeanRealizedFpr",
+            _format_metric(ton_to_iot["target_realized_fpr"]),
+        ),
+        _macro_line("IotPairMeanKs", _format_metric(iot_pair_shift["mean_ks"], 2)),
+        _macro_line(
+            "UnswDirectionMeanKsMin",
+            _format_metric(unsw_direction_shift["mean_ks"].min(), 2),
+        ),
+        _macro_line(
+            "UnswDirectionMeanKsMax",
+            _format_metric(unsw_direction_shift["mean_ks"].max(), 2),
+        ),
+        _macro_line(
+            "AlphaHatAllNaturalCatastrophicAuroc",
+            _format_metric(alpha_all["catastrophic_auroc"]),
+        ),
+        _macro_line(
+            "AlphaHatAllNaturalCatastrophicAuprc",
+            _format_metric(alpha_all["catastrophic_auprc"]),
+        ),
+        _macro_line(
+            "AlphaHatAllNaturalSeveritySpearman",
+            _format_metric(alpha_all["spearman_vs_operational_severity"]),
+        ),
+        _macro_line(
+            "ProxyAAllNaturalCatastrophicAuroc",
+            _format_metric(proxy_all["catastrophic_auroc"]),
+        ),
+        _macro_line(
+            "ProxyAAllNaturalCatastrophicAuprc",
+            _format_metric(proxy_all["catastrophic_auprc"]),
+        ),
+        _macro_line(
+            "ProxyAAllNaturalSeveritySpearman",
+            _format_metric(proxy_all["spearman_vs_operational_severity"]),
+        ),
+        _macro_line(
+            "WassersteinAllNaturalCatastrophicAuroc",
+            _format_metric(water_all["catastrophic_auroc"]),
+        ),
+        _macro_line(
+            "SourceRiskAllNaturalCatastrophicAuroc",
+            _format_metric(risk_all["catastrophic_auroc"]),
+        ),
+        _macro_line(
+            "AlphaHatPrimaryCatastrophicAuroc",
+            _format_metric(alpha_primary["catastrophic_auroc"]),
+        ),
+        _macro_line(
+            "AlphaHatPrimarySeveritySpearman",
+            _format_metric(alpha_primary["spearman_vs_operational_severity"]),
+        ),
+        _macro_line(
+            "SourceRiskPrimaryCatastrophicAuroc",
+            _format_metric(risk_primary["catastrophic_auroc"]),
+        ),
+        _macro_line(
+            "AllNaturalMedianRetunedTargetTpr",
+            _format_metric(target_retuned["oracle_target_tpr_at_1pct_fpr"].median()),
+        ),
+        _macro_line(
+            "AllNaturalMedianRetunedTprGain",
+            _format_metric(target_retuned["retuned_tpr_gain"].median()),
+        ),
+        _macro_line(
+            "IotToTonMedianRetunedTprGain",
+            _format_metric(iot_to_ton_retuned["median_retuned_tpr_gain"]),
+        ),
+        _macro_line(
+            "TonToIotMedianRetunedTprGain",
+            _format_metric(ton_to_iot_retuned["median_retuned_tpr_gain"]),
+        ),
+        _macro_line(
+            "BudgetHalfPctMedianTargetTpr",
+            _format_metric(budget_half["target_tpr_at_budget"].median()),
+        ),
+        _macro_line(
+            "BudgetOnePctMedianTargetTpr",
+            _format_metric(budget_one["target_tpr_at_budget"].median()),
+        ),
+        _macro_line(
+            "BudgetFivePctMedianTargetTpr",
+            _format_metric(budget_five["target_tpr_at_budget"].median()),
+        ),
+        _macro_line(
+            "BudgetHalfPctMedianRealizedFpr",
+            _format_metric(budget_half["target_realized_fpr"].median()),
+        ),
+        _macro_line(
+            "BudgetOnePctMedianRealizedFpr",
+            _format_metric(budget_one["target_realized_fpr"].median()),
+        ),
+        _macro_line(
+            "BudgetFivePctMedianRealizedFpr",
+            _format_metric(budget_five["target_realized_fpr"].median()),
+        ),
+        *[
+            macro
+            for row in competent_budget.itertuples(index=False)
+            for macro in [
+                _macro_line(
+                    f"{_budget_macro_stem(float(row.budget))}CompetentMedianSourceTpr",
+                    _format_metric(row.median_source_holdout_tpr),
+                ),
+                _macro_line(
+                    f"{_budget_macro_stem(float(row.budget))}CompetentMedianTargetTpr",
+                    _format_metric(row.median_target_tpr),
+                ),
+                _macro_line(
+                    f"{_budget_macro_stem(float(row.budget))}CompetentMedianTargetRealizedFpr",
+                    _format_metric(row.median_target_realized_fpr),
+                ),
+                _macro_line(
+                    f"{_budget_macro_stem(float(row.budget))}CompetentMedianBudgetMultiple",
+                    _format_metric(row.median_budget_multiple),
+                ),
+                _macro_line(
+                    f"{_budget_macro_stem(float(row.budget))}CompetentCatastrophicCount",
+                    str(int(row.catastrophic_count)),
+                ),
+            ]
+        ],
+        _macro_line(
+            "BudgetHalfPctCompetentDominantFprxDirection",
+            budget_half_driver,
+        ),
+        _macro_line(
+            "BudgetOnePctCompetentDominantFprxDirection",
+            budget_one_driver,
+        ),
+        _macro_line(
+            "BudgetFivePctCompetentDominantFprxDirections",
+            budget_five_drivers,
+        ),
+        _macro_line(
+            "BudgetFivePctCompetentCatastrophicShare",
+            rf"{int(round(100.0 * float(competent_budget.loc[np.isclose(competent_budget['budget'].astype(float), 0.05), 'catastrophic_count'].iloc[0]) / max(float(competent_budget.loc[np.isclose(competent_budget['budget'].astype(float), 0.05), 'n_settings'].iloc[0]), 1.0)))}\%",
+        ),
+        _macro_line(
+            "CoralCompetentMedianTargetAuroc",
+            _format_metric(coral_competent["median_target_auroc"]),
+        ),
+        _macro_line(
+            "CoralCompetentRankingFailureCount",
+            str(int(coral_competent["ranking_failure_count"])),
+        ),
+        _macro_line(
+            "CoralCompetentMedianTargetPauc",
+            _format_metric(coral_competent["median_target_pauc"]),
+        ),
+        _macro_line(
+            "CoralCompetentMedianBudgetMultiple",
+            _format_metric(coral_competent["median_budget_multiple"]),
+        ),
+        _macro_line(
+            "CoralCompetentCatastrophicCount",
+            str(int(coral_competent["catastrophic_count"])),
+        ),
+        _macro_line(
+            "CoralCompetentCatastrophicShare",
+            rf"{int(round(100.0 * float(coral_competent['catastrophic_count']) / max(float(coral_competent['n_settings']), 1.0)))}\%",
+        ),
+        _macro_line(
+            "CoverageSweepStableFloorMin",
+            _format_metric(positive_coverage["coverage_floor"].min(), 2),
+        ),
+        _macro_line(
+            "CoverageSweepStableFloorMax",
+            _format_metric(positive_coverage["coverage_floor"].max(), 2),
+        ),
+        _macro_line(
+            "CoverageSweepEmptyFloor",
+            _format_metric(empty_coverage["coverage_floor"].min(), 2),
+        ),
+        _macro_line(
+            "CanonicalRunId",
+            _escape_latex_text(str(decision["canonical_run_id"])),
+        ),
+    ]
+    return "\n".join(macros) + "\n"
+
+
+def _within_domain_table(
+    within: pd.DataFrame,
+    ranking_diagnosis: pd.DataFrame,
+    source_holdout_fpr: pd.DataFrame,
+) -> str:
+    competence = _source_competence_frame(ranking_diagnosis, source_holdout_fpr)[
+        ["source_dataset", "model", "is_competent"]
+    ].copy()
+    frame = within.rename(columns={"dataset": "source_dataset"}).merge(
+        competence,
+        on=["source_dataset", "model"],
+        how="left",
+        validate="one_to_one",
+    )
+    if frame["is_competent"].isnull().any():
+        missing = frame.loc[
+            frame["is_competent"].isnull(),
+            ["source_dataset", "model"],
+        ]
+        raise ValueError(
+            "Missing competence rows for within-domain table: "
+            f"{missing.to_dict(orient='records')}"
+        )
+    frame = frame.sort_values(
+        by=["source_dataset", "model"],
+        key=lambda column: column.map(
+            {
+                **{value: index for index, value in enumerate(DATASET_LABELS)},
+                **{value: index for index, value in enumerate(MODEL_ORDER)},
+            }
+        ).fillna(999),
+    )
+    frame["source_dataset"] = frame["source_dataset"].map(DATASET_LABELS)
+    frame["model"] = frame.apply(
+        lambda row: MODEL_LABELS[str(row["model"])]
+        + ("" if int(row["is_competent"]) == 1 else r"$\dagger$"),
+        axis=1,
+    )
+    frame["holdout_ci"] = frame.apply(
+        lambda row: f"[{_format_metric(row['source_holdout_tpr_at_1pct_fpr_ci_lo'])}, "
+        f"{_format_metric(row['source_holdout_tpr_at_1pct_fpr_ci_hi'])}]",
+        axis=1,
+    )
+    frame["validation_ci"] = frame.apply(
+        lambda row: f"[{_format_metric(row['source_validation_tpr_at_1pct_fpr_ci_lo'])}, "
+        f"{_format_metric(row['source_validation_tpr_at_1pct_fpr_ci_hi'])}]",
+        axis=1,
+    )
+    frame = frame.rename(
+        columns={
+            "source_dataset": "Dataset",
+            "model": "Model",
+            "source_holdout_tpr_at_1pct_fpr": r"Source holdout TPR@\FrozenFprTarget{}",
+            "holdout_ci": "95\\% CI",
+            "source_validation_tpr_at_1pct_fpr": r"Source validation TPR@\FrozenFprTarget{}",
+            "validation_ci": "95\\% CI ",
+        }
+    )
+    repeated_dataset = frame["Dataset"].eq(frame["Dataset"].shift())
+    frame.loc[repeated_dataset, "Dataset"] = ""
+    frame = frame[
+        [
+            "Dataset",
+            "Model",
+            r"Source holdout TPR@\FrozenFprTarget{}",
+            "95\\% CI",
+            r"Source validation TPR@\FrozenFprTarget{}",
+            "95\\% CI ",
+        ]
+    ]
+    for column in [
+        r"Source holdout TPR@\FrozenFprTarget{}",
+        r"Source validation TPR@\FrozenFprTarget{}",
+    ]:
+        frame[column] = frame[column].map(_format_metric)
+    tabular = _dataframe_to_latex(frame, alignment="llrlrl")
+    return _latex_wrap_table(
+        tabular,
+        (
+            r"Within-domain source-side performance under the frozen "
+            r"\FrozenFprTarget{} source-validation operating point. Confidence "
+            r"intervals are grouped-bootstrap percentile intervals over group identifiers. "
+            r"Rows marked with $\dagger$ fail the source-side competence rule used for the "
+            r"competent-setting subset."
+        ),
+        "tab:within-domain",
+        font_size=r"\small",
+        resize=True,
+    )
+
+
+def _ranking_diagnosis_table(ranking_diagnosis: pd.DataFrame) -> str:
+    frame = (
+        ranking_diagnosis.loc[ranking_diagnosis["diagnosis"].isin(DIAGNOSIS_ORDER)]
+        .groupby("diagnosis", as_index=False)
+        .agg(
+            count=("setting_id", "count"),
+            median_target_auroc=("target_auroc", "median"),
+            median_fixed_target_realized_fpr=("fixed_target_realized_fpr", "median"),
+            median_fixed_relative_tpr_drop=("fixed_relative_tpr_drop", "median"),
+        )
+    )
+    frame["diagnosis_order"] = frame["diagnosis"].map(
+        {name: index for index, name in enumerate(DIAGNOSIS_ORDER)}
+    )
+    frame = frame.sort_values("diagnosis_order").drop(columns=["diagnosis_order"])
+    frame["Diagnosis"] = frame["diagnosis"].map(DIAGNOSIS_LABELS)
+    frame["Criterion"] = frame["diagnosis"].map(DIAGNOSIS_CRITERIA)
+    frame = frame.rename(
+        columns={
+            "count": "Count",
+            "median_target_auroc": "Median target AUROC",
+            "median_fixed_target_realized_fpr": "Median realized FPR",
+            "median_fixed_relative_tpr_drop": "Median relative TPR drop",
+        }
+    )[
+        [
+            "Diagnosis",
+            "Criterion",
+            "Count",
+            "Median target AUROC",
+            "Median realized FPR",
+            "Median relative TPR drop",
+        ]
+    ]
+    frame["Count"] = frame["Count"].astype(int).astype(str)
+    for column in [
+        "Median target AUROC",
+        "Median realized FPR",
+        "Median relative TPR drop",
+    ]:
+        frame[column] = frame[column].map(_format_metric)
+    tabular = _dataframe_to_latex(frame, alignment="llrrrr")
+    return _latex_wrap_table(
+        tabular,
+        (
+            r"Failure-mode decomposition for all \NaturalSettingCount{} natural-transfer "
+            r"settings. The final row is descriptive rather than a success label: it marks "
+            r"rows with target AUROC~$\geq$~0.60 and relative TPR drop~$\leq$~0.50, not "
+            r"operationally acceptable deployment. Collapse rows include both at-chance "
+            r"and inverted-orientation failures under the transferred score direction."
+        ),
+        "tab:ranking-diagnosis",
+        font_size=r"\footnotesize",
+        resize=True,
+    )
+
+
+def _oracle_retuned_summary_table(
+    target_retuned: pd.DataFrame,
+    table_label: str,
+) -> str:
+    frame = _retuned_direction_summary(target_retuned).copy()
+    frame["Direction"] = frame.apply(
+        lambda row: _latex_direction_label(str(row["source_dataset"]), str(row["target_dataset"])),
+        axis=1,
+    )
+    frame = frame.rename(
+        columns={
+            "median_fixed_target_tpr": "Fixed TPR",
+            "median_oracle_target_tpr": "Retuned TPR",
+            "median_retuned_tpr_gain": r"Median paired $\Delta$TPR",
+        }
+    )[
+        [
+            "Direction",
+            "Fixed TPR",
+            "Retuned TPR",
+            r"Median paired $\Delta$TPR",
+        ]
+    ]
+    for column in ["Fixed TPR", "Retuned TPR", r"Median paired $\Delta$TPR"]:
+        frame[column] = frame[column].map(_format_metric)
+    tabular = _dataframe_to_latex(frame, alignment="lrrr")
+    return _latex_wrap_table(
+        tabular,
+        (
+            r"Diagnostic oracle retuning at the same \FrozenFprTarget{} false-positive "
+            r"budget. Thresholds are re-selected with target labels for diagnosis only; "
+            r"this table is not part of the frozen-threshold benchmark protocol. The "
+            r"change column reports the median of per-setting retuned-minus-fixed TPR "
+            r"changes within each direction, not the difference between direction medians. "
+            r"When the transferred frozen threshold already runs far above the target-domain "
+            r"\FrozenFprTarget{} FPR budget, oracle retuning must raise the cutoff to "
+            r"restore that budget; if target ranking is weak, that corrected cutoff can "
+            r"collapse TPR."
+        ),
+        table_label,
+        font_size=r"\scriptsize",
+    )
+
+
+def _cross_domain_table(cross: pd.DataFrame) -> str:
+    frame = cross.copy()
+    direction_order = {pair: index for index, pair in enumerate(DIRECTION_ORDER)}
+    model_order = {model: index for index, model in enumerate(MODEL_ORDER)}
+    frame["direction_order"] = frame.apply(
+        lambda row: direction_order[(row["source_dataset"], row["target_dataset"])], axis=1
+    )
+    frame["model_order"] = frame["model"].map(model_order)
+    frame = frame.sort_values(["direction_order", "model_order"]).drop(
+        columns=["direction_order", "model_order"]
+    )
+    frame["source_dataset"] = frame["source_dataset"].map(DATASET_LABELS)
+    frame["target_dataset"] = frame["target_dataset"].map(DATASET_LABELS)
+    frame["model"] = frame["model"].map(MODEL_LABELS)
+    frame["oracle_alpha_scope"] = frame["oracle_alpha_scope"].map(_format_scope)
+    frame["target_tpr_ci"] = frame.apply(
+        lambda row: f"[{_format_metric(row['target_tpr_at_1pct_fpr_ci_lo'])}, "
+        f"{_format_metric(row['target_tpr_at_1pct_fpr_ci_hi'])}]",
+        axis=1,
+    )
+    frame["target_fpr_ci"] = frame.apply(
+        lambda row: f"[{_format_metric(row['target_realized_fpr_ci_lo'])}, "
+        f"{_format_metric(row['target_realized_fpr_ci_hi'])}]",
+        axis=1,
+    )
+    repeated_source = frame["source_dataset"].eq(frame["source_dataset"].shift())
+    repeated_target = repeated_source & frame["target_dataset"].eq(frame["target_dataset"].shift())
+    frame.loc[repeated_source, "source_dataset"] = ""
+    frame.loc[repeated_target, "target_dataset"] = ""
+    frame = frame[
+        [
+            "source_dataset",
+            "target_dataset",
+            "model",
+            "target_tpr_at_1pct_fpr",
+            "target_tpr_ci",
+            "target_realized_fpr",
+            "target_fpr_ci",
+            "target_auroc",
+            "target_auprc",
+            "relative_tpr_drop",
+            "oracle_alpha_scope",
+        ]
+    ].rename(
+        columns={
+            "source_dataset": "Source",
+            "target_dataset": "Target",
+            "model": "Model",
+            "target_tpr_at_1pct_fpr": r"TPR@\FrozenFprTarget{}",
+            "target_tpr_ci": "95\\% CI",
+            "target_realized_fpr": "Realized FPR",
+            "target_fpr_ci": "95\\% CI ",
+            "target_auroc": "AUROC",
+            "target_auprc": "AUPRC",
+            "relative_tpr_drop": "Relative TPR drop",
+            "oracle_alpha_scope": "Scope",
+        }
+    )
+    frame = frame[
+        [
+            "Source",
+            "Target",
+            "Model",
+            r"TPR@\FrozenFprTarget{}",
+            "95\\% CI",
+            "Realized FPR",
+            "95\\% CI ",
+            "AUROC",
+            "AUPRC",
+            "Relative TPR drop",
+            "Scope",
+        ]
+    ]
+    for column in [
+        r"TPR@\FrozenFprTarget{}",
+        "Realized FPR",
+        "AUROC",
+        "AUPRC",
+        "Relative TPR drop",
+    ]:
+        frame[column] = frame[column].map(_format_metric)
+    tabular = _dataframe_to_latex(
+        frame,
+        alignment="lllrlrrrrll",
+        midrule_after={7, 15},
+    )
+    return _latex_wrap_table(
+        tabular,
+        (
+            r"Cross-domain fixed-threshold benchmark across all "
+            r"\NaturalSettingCount{} transfer settings. Confidence intervals are "
+            r"grouped-bootstrap percentile intervals over group identifiers. Rows "
+            r"marked as stress-test remain in the operational benchmark but are "
+            r"excluded from claim-bearing oracle novelty interpretation."
+        ),
+        "tab:cross-domain",
+        font_size=r"\footnotesize",
+        resize=True,
+    )
+
+
+def _monitor_table(monitor: pd.DataFrame) -> str:
+    frame = monitor.copy()
+    frame["subset"] = frame["subset"].map(
+        {
+            "all_natural": "all natural",
+            "primary_iot": "primary IoT",
+        }
+    )
+    frame["score_name"] = frame["score_name"].map(MONITOR_LABELS)
+    frame = frame[
+        [
+            "subset",
+            "score_name",
+            "spearman_vs_operational_severity",
+            "catastrophic_auroc",
+            "catastrophic_auprc",
+            "rank_catastrophic_auroc",
+            "rank_catastrophic_auprc",
+            "rank_spearman_vs_operational_severity",
+        ]
+    ].rename(
+        columns={
+            "subset": "Subset",
+            "score_name": "Score",
+            "spearman_vs_operational_severity": "Spearman vs. operational severity",
+            "catastrophic_auroc": "Catastrophic AUROC",
+            "catastrophic_auprc": "Catastrophic AUPRC",
+            "rank_catastrophic_auroc": "AUROC rank",
+            "rank_catastrophic_auprc": "AUPRC rank",
+            "rank_spearman_vs_operational_severity": "Spearman rank",
+        }
+    )
+    for column in [
+        "Spearman vs. operational severity",
+        "Catastrophic AUROC",
+        "Catastrophic AUPRC",
+    ]:
+        frame[column] = frame[column].map(_format_metric)
+    tabular = _dataframe_to_latex(frame, alignment="llrrrlll", midrule_after={3})
+    return _latex_wrap_table(
+        tabular,
+        (
+            r"Deployable monitor comparison derived directly from the canonical "
+            r"benchmark settings. Higher values indicate stronger alignment with "
+            r"operational severity and with catastrophic operational failure."
+        ),
+        "tab:monitor-comparison",
+        font_size=r"\footnotesize",
+        resize=True,
+    )
+
+
+def _primary_oracle_table(primary: pd.DataFrame) -> str:
+    frame = primary.copy()
+    direction_order = {pair: index for index, pair in enumerate(DIRECTION_ORDER)}
+    model_order = {model: index for index, model in enumerate(MODEL_ORDER)}
+    frame["direction_order"] = frame.apply(
+        lambda row: direction_order[(row["source_dataset"], row["target_dataset"])], axis=1
+    )
+    frame["model_order"] = frame["model"].map(model_order)
+    frame = frame.sort_values(["direction_order", "model_order"]).drop(
+        columns=["direction_order", "model_order"]
+    )
+    frame["source_dataset"] = frame["source_dataset"].map(DATASET_LABELS)
+    frame["target_dataset"] = frame["target_dataset"].map(DATASET_LABELS)
+    frame["model"] = frame["model"].map(MODEL_LABELS)
+    repeated_source = frame["source_dataset"].eq(frame["source_dataset"].shift())
+    repeated_target = repeated_source & frame["target_dataset"].eq(frame["target_dataset"].shift())
+    frame.loc[repeated_source, "source_dataset"] = ""
+    frame.loc[repeated_target, "target_dataset"] = ""
+    frame = frame[
+        [
+            "source_dataset",
+            "target_dataset",
+            "model",
+            "oracle_alpha",
+            "relative_tpr_drop",
+            "target_tpr_at_1pct_fpr",
+            "target_realized_fpr",
+            "catastrophic_operational_failure",
+        ]
+    ].rename(
+        columns={
+            "source_dataset": "Source",
+            "target_dataset": "Target",
+            "model": "Model",
+            "oracle_alpha": r"Oracle $\alpha$",
+            "relative_tpr_drop": "Relative TPR drop",
+            "target_tpr_at_1pct_fpr": r"TPR@\FrozenFprTarget{}",
+            "target_realized_fpr": "Realized FPR",
+            "catastrophic_operational_failure": "Catastrophic",
+        }
+    )
+    for column in [
+        r"Oracle $\alpha$",
+        "Relative TPR drop",
+        r"TPR@\FrozenFprTarget{}",
+        "Realized FPR",
+    ]:
+        frame[column] = frame[column].map(_format_metric)
+    frame["Catastrophic"] = frame["Catastrophic"].astype(int).astype(str)
+    tabular = _dataframe_to_latex(frame, alignment="lllrrrrl", midrule_after={3})
+    return _latex_wrap_table(
+        tabular,
+        (
+            r"Claim-bearing IoT subset used for the oracle novelty interpretation. "
+            r"The direction break is shown explicitly because the novelty reading "
+            r"is limited to these rows."
+        ),
+        "tab:primary-oracle-context",
+        font_size=r"\small",
+        resize=True,
+    )
+
+
+def _acsac_within_table(within: pd.DataFrame) -> str:
+    frame = within.copy()
+    frame["dataset"] = frame["dataset"].map(DATASET_LABELS)
+    frame["model"] = frame["model"].map(MODEL_LABELS)
+    frame["holdout"] = frame.apply(
+        lambda row: (
+            f"{_format_metric(row['source_holdout_tpr_at_1pct_fpr'])} "
+            f"[{_format_metric(row['source_holdout_tpr_at_1pct_fpr_ci_lo'])}, "
+            f"{_format_metric(row['source_holdout_tpr_at_1pct_fpr_ci_hi'])}]"
+        ),
+        axis=1,
+    )
+    frame["validation"] = frame.apply(
+        lambda row: (
+            f"{_format_metric(row['source_validation_tpr_at_1pct_fpr'])} "
+            f"[{_format_metric(row['source_validation_tpr_at_1pct_fpr_ci_lo'])}, "
+            f"{_format_metric(row['source_validation_tpr_at_1pct_fpr_ci_hi'])}]"
+        ),
+        axis=1,
+    )
+    frame = frame.rename(
+        columns={
+            "dataset": "Data",
+            "model": "Model",
+            "holdout": r"Holdout TPR@\FrozenFprTarget{}",
+            "validation": r"Val TPR@\FrozenFprTarget{}",
+        }
+    )[["Data", "Model", r"Holdout TPR@\FrozenFprTarget{}", r"Val TPR@\FrozenFprTarget{}"]]
+    tabular = _dataframe_to_latex(frame, alignment="llp{2.2cm}p{2.2cm}")
+    return _latex_wrap_table(
+        tabular,
+        (
+            r"Source-side operating-point sanity check. Each cell reports the "
+            r"point estimate and grouped-bootstrap 95\% interval."
+        ),
+        "tab:acsac-within-domain",
+        font_size=r"\scriptsize",
+    )
+
+
+def _acsac_source_quality_table(
+    within: pd.DataFrame,
+    ranking_diagnosis: pd.DataFrame,
+    source_holdout_fpr: pd.DataFrame,
+) -> str:
+    competence = _source_competence_frame(ranking_diagnosis, source_holdout_fpr)
+    within_source = within.rename(columns={"dataset": "source_dataset"}).copy()
+    ranking_source = (
+        ranking_diagnosis[
+            ["source_dataset", "model", "source_holdout_auroc", "source_holdout_tpr"]
+        ]
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
+    frame = (
+        within_source.merge(
+            ranking_source,
+            on=["source_dataset", "model"],
+            how="left",
+            validate="one_to_one",
+        )
+        .merge(
+            competence[
+                [
+                    "source_dataset",
+                    "model",
+                    "source_holdout_realized_fpr",
+                    "is_competent",
+                ]
+            ],
+            on=["source_dataset", "model"],
+            how="left",
+            validate="one_to_one",
+        )
+        .sort_values(
+            ["source_dataset", "model"],
+            key=lambda column: column.map(
+                {
+                    **{name: idx for idx, name in enumerate(DATASET_LABELS)},
+                    **{name: idx for idx, name in enumerate(MODEL_ORDER)},
+                }
+            ).fillna(999),
+        )
+        .reset_index(drop=True)
+    )
+    frame["source_dataset"] = frame["source_dataset"].map(DATASET_SHORT)
+    frame["model"] = frame.apply(
+        lambda row: MODEL_LABELS[str(row["model"])]
+        + ("" if int(row["is_competent"]) == 1 else r"$\dagger$"),
+        axis=1,
+    )
+    repeated_dataset = frame["source_dataset"].eq(frame["source_dataset"].shift())
+    frame.loc[repeated_dataset, "source_dataset"] = ""
+    frame["holdout"] = frame.apply(
+        lambda row: (
+            f"{_format_metric(row['source_holdout_tpr_at_1pct_fpr'])} "
+            f"[{_format_metric(row['source_holdout_tpr_at_1pct_fpr_ci_lo'])}, "
+            f"{_format_metric(row['source_holdout_tpr_at_1pct_fpr_ci_hi'])}]"
+        ),
+        axis=1,
+    )
+    frame = frame.rename(
+        columns={
+            "source_dataset": "Dataset",
+            "model": "Model",
+            "source_holdout_auroc": "AUROC",
+            "holdout": r"TPR [95\% CI]",
+            "source_holdout_realized_fpr": "FPR",
+        }
+    )[["Dataset", "Model", "AUROC", r"TPR [95\% CI]", "FPR"]]
+    frame["AUROC"] = frame["AUROC"].map(_format_metric)
+    frame["FPR"] = frame["FPR"].map(_format_metric)
+    tabular = _dataframe_to_latex(frame, alignment="llrrr")
+    return _latex_wrap_table(
+        tabular,
+        (
+            r"Source-side quality. TPR and FPR are at the frozen "
+            r"\FrozenFprTarget{} threshold. Rows marked with $\dagger$ fail the "
+            r"metric-derived competence rule used for the competent-setting subset."
+        ),
+        "tab:source",
+        font_size=r"\footnotesize",
+    )
+
+
+def _acsac_cross_summary_table(cross: pd.DataFrame) -> str:
+    frame = _direction_summary(cross).copy()
+    frame["direction"] = frame.apply(
+        lambda row: _latex_direction_label(str(row["source_dataset"]), str(row["target_dataset"])),
+        axis=1,
+    )
+    frame = frame.rename(
+        columns={
+            "direction": "Direction",
+            "median_target_tpr": "Med TPR",
+            "median_realized_fpr": "Med FPR",
+            "min_target_tpr": "Min TPR",
+            "max_realized_fpr": "Max FPR",
+        }
+    )[
+        [
+            "Direction",
+            "Med TPR",
+            "Med FPR",
+            "Min TPR",
+            "Max FPR",
+        ]
+    ]
+    for column in ["Med TPR", "Med FPR", "Min TPR", "Max FPR"]:
+        frame[column] = frame[column].map(_format_metric)
+    tabular = _dataframe_to_latex(frame, alignment="lrrrr")
+    return _latex_wrap_table(
+        tabular,
+        (
+            rf"Direction-level transfer summary across the {cross['model'].nunique()} "
+            r"canonical models. The full per-setting matrix remains in the artifact "
+            r"package; this table provides a compact directional view. The two "
+            r"IoT-only directions carry the novelty interpretation, while the "
+            r"UNSW-NB15 directions remain stress tests."
+        ),
+        "tab:acsac-cross-summary",
+        font_size=r"\scriptsize",
+    )
+
+
+def _acsac_collapse_table(
+    ranking_diagnosis: pd.DataFrame,
+    competent_pairs: set[tuple[str, str]],
+) -> str:
+    frame = _filter_competent_source_rows(ranking_diagnosis, competent_pairs).copy()
+    for column in ["target_auroc_ci_lo", "target_auroc_ci_hi"]:
+        if column not in frame.columns:
+            frame[column] = float("nan")
+    direction_order = {pair: index for index, pair in enumerate(DIRECTION_ORDER)}
+    model_order = {model: index for index, model in enumerate(MODEL_ORDER)}
+    frame["direction_order"] = frame.apply(
+        lambda row: direction_order[(row["source_dataset"], row["target_dataset"])],
+        axis=1,
+    )
+    frame["model_order"] = frame["model"].map(model_order)
+    frame = frame.sort_values(["direction_order", "model_order"]).reset_index(drop=True)
+    frame["Direction"] = frame.apply(
+        lambda row: _latex_direction_label(str(row["source_dataset"]), str(row["target_dataset"])),
+        axis=1,
+    )
+    repeated_direction = frame["Direction"].eq(frame["Direction"].shift())
+    frame.loc[repeated_direction, "Direction"] = ""
+    frame["Model"] = frame["model"].map(MODEL_LABELS)
+    frame["Tgt AUROC [95\\% CI]"] = frame.apply(
+        lambda row: _format_metric_ci(
+            row["target_auroc"],
+            row["target_auroc_ci_lo"],
+            row["target_auroc_ci_hi"],
+        )
+        + (r"$\dagger$" if float(row["target_auroc"]) < 0.60 else "")
+        + (r"$\ddagger$" if float(row["target_auroc"]) < 0.50 else ""),
+        axis=1,
+    )
+    frame[r"Src/Tgt pAUC@1\%"] = frame.apply(
+        lambda row: (
+            f"{_format_metric(row['source_holdout_pauc_at_1pct'])} / "
+            f"{_format_metric(row['target_pauc_at_1pct'])}"
+        ),
+        axis=1,
+    )
+    frame = frame[["Direction", "Model", "Tgt AUROC [95\\% CI]", r"Src/Tgt pAUC@1\%"]]
+    tabular = _dataframe_to_latex(frame, alignment="llp{1.40in}r")
+    return _latex_wrap_table(
+        tabular,
+        (
+            rf"Source vs.\ target AUROC for the {len(frame)} competent settings. "
+            r"Ranking failure ($\dagger$: target AUROC~$<$~0.60); inversion "
+            r"($\ddagger$: target AUROC~$<$~0.50 under the transferred score "
+            r"orientation). Target AUROC intervals are grouped-bootstrap 95\% "
+            r"percentile CIs over the benchmark grouping units, reported as "
+            r"descriptive intervals rather than multiplicity-adjusted inference; "
+            r"markers remain keyed to the point estimates. The final column reports source-holdout / "
+            r"target standardized pAUC@1\%; on this scale, 0.5 denotes chance-level "
+            r"low-FPR ranking. No setting achieves acceptable ranking "
+            r"(AUROC $\geq$ 0.70)."
+        ),
+        "tab:collapse",
+        font_size=r"\scriptsize",
+        tabcolsep="3pt",
+    )
+
+
+def _acsac_oracle_direction_table(
+    primary: pd.DataFrame,
+    competent_pairs: set[tuple[str, str]],
+) -> str:
+    competent_primary = _filter_competent_source_rows(primary, competent_pairs)
+    frame = _primary_direction_summary(competent_primary).copy()
+    competent_counts = frame["competent_model_count"].astype(int).unique().tolist()
+    if len(competent_counts) == 1:
+        count_header = f"Cat./{competent_counts[0]}"
+        count_caption = (
+            f"Cat./{competent_counts[0]} counts catastrophic operational failures among the "
+            f"{competent_counts[0]} competent model rows in each direction."
+        )
+    else:
+        count_header = "Cat./n"
+        count_caption = (
+            r"Cat./n counts catastrophic operational failures among the competent model rows in "
+            r"each direction."
+        )
+    frame["direction"] = frame.apply(
+        lambda row: _latex_direction_label(str(row["source_dataset"]), str(row["target_dataset"])),
+        axis=1,
+    )
+    frame = frame.rename(
+        columns={
+            "direction": "Direction",
+            "oracle_alpha": r"Oracle $\alpha$",
+            "mean_relative_tpr_drop": "Mean drop",
+            "mean_target_tpr": "Mean TPR",
+            "mean_realized_fpr": "Mean FPR",
+            "catastrophic_count": count_header,
+        }
+    )[
+        [
+            "Direction",
+            r"Oracle $\alpha$",
+            "Mean drop",
+            "Mean TPR",
+            "Mean FPR",
+            count_header,
+        ]
+    ]
+    for column in [
+        r"Oracle $\alpha$",
+        "Mean drop",
+        "Mean TPR",
+        "Mean FPR",
+    ]:
+        frame[column] = frame[column].map(_format_metric)
+    frame[count_header] = frame[count_header].astype(int).astype(str)
+    tabular = _dataframe_to_latex(frame, alignment="lrrrrl")
+    return _latex_wrap_table(
+        tabular,
+        (
+            r"IoT-only directional context for the oracle novelty interpretation after applying "
+            r"the source-side competence rule. " + count_caption
+        ),
+        "tab:acsac-oracle-direction",
+        font_size=r"\scriptsize",
+    )
+
+
+def _budget_robustness_table(
+    budget_sensitivity: pd.DataFrame,
+    competent_pairs: set[tuple[str, str]],
+    label: str,
+    compact: bool,
+) -> str:
+    summary = _competent_budget_summary(budget_sensitivity, competent_pairs)
+    count_header = f"Cat./{int(summary['n_settings'].iloc[0])}"
+    if compact:
+        frame = summary[
+            [
+                "Budget",
+                "median_source_holdout_tpr",
+                "median_target_tpr",
+                "median_budget_multiple",
+                "catastrophic_count",
+            ]
+        ].rename(
+            columns={
+                "median_source_holdout_tpr": "Src med. TPR",
+                "median_target_tpr": "Tgt med. TPR",
+                "median_budget_multiple": r"Med. FPR$\times$",
+                "catastrophic_count": count_header,
+            }
+        )
+        for column in ["Src med. TPR", "Tgt med. TPR", r"Med. FPR$\times$"]:
+            frame[column] = frame[column].map(_format_metric)
+        frame[count_header] = frame[count_header].astype(int).astype(str)
+        caption = (
+            rf"Source-selected operating-budget robustness on the {int(summary['n_settings'].iloc[0])} competent settings. "
+            r"Each row freezes the threshold at the listed source-validation FPR budget and transfers it unchanged to source holdout and target. "
+            r"FPR$\times$ denotes the median realized target FPR divided by the selected source-side budget. "
+            rf"{count_header} counts catastrophic settings under the existing operational-severity rule."
+        )
+        return _latex_wrap_table(
+            _dataframe_to_latex(frame, alignment="lrrrr"),
+            caption,
+            label,
+            font_size=r"\scriptsize",
+            tabcolsep="3pt",
+        )
+
+    frame = summary[
+        [
+            "Budget",
+            "median_source_holdout_tpr",
+            "median_target_tpr",
+            "median_target_realized_fpr",
+            "median_budget_multiple",
+            "catastrophic_count",
+        ]
+    ].rename(
+        columns={
+            "median_source_holdout_tpr": "Src holdout med. TPR",
+            "median_target_tpr": "Tgt med. TPR",
+            "median_target_realized_fpr": "Med. realized FPR",
+            "median_budget_multiple": r"Med. FPR$\times$",
+            "catastrophic_count": count_header,
+        }
+    )
+    for column in [
+        "Src holdout med. TPR",
+        "Tgt med. TPR",
+        "Med. realized FPR",
+        r"Med. FPR$\times$",
+    ]:
+        frame[column] = frame[column].map(_format_metric)
+    frame[count_header] = frame[count_header].astype(int).astype(str)
+    caption = (
+        rf"Source-selected operating-budget robustness on the {int(summary['n_settings'].iloc[0])} competent settings. "
+        r"Each row freezes the threshold at the listed source-validation FPR budget and transfers it unchanged to source holdout and target. "
+        r"Med. realized FPR is the median target false-positive rate under that transferred threshold. "
+        r"FPR$\times$ denotes the median realized target FPR divided by the selected source-side budget. "
+        rf"{count_header} counts catastrophic settings under the existing operational-severity rule."
+    )
+    return _latex_wrap_table(
+        _dataframe_to_latex(frame, alignment="lrrrrr"),
+        caption,
+        label,
+        font_size=r"\footnotesize",
+        resize=True,
+        tabcolsep="3pt",
+    )
+
+
+def _source_only_competent_summary(
+    coral_auxiliary: pd.DataFrame,
+    competent_pairs: set[tuple[str, str]],
+) -> pd.Series:
+    return _coral_method_competent_summary(
+        coral_auxiliary,
+        competent_pairs,
+        auxiliary_method="source_only_matched",
+    )
+
+
+def _coral_auxiliary_table(
+    coral_auxiliary: pd.DataFrame,
+    competent_pairs: set[tuple[str, str]],
+    *,
+    label: str,
+    compact: bool,
+) -> str:
+    source_summary = _source_only_competent_summary(
+        coral_auxiliary,
+        competent_pairs,
+    )
+    coral_summary = _coral_method_competent_summary(
+        coral_auxiliary,
+        competent_pairs,
+        auxiliary_method="coral",
+    )
+    count_header = f"Cat./{int(source_summary['n_settings'])}"
+    rows = [
+        {
+            "Method": "Source-only",
+            "Med. tgt AUROC": _format_metric(source_summary["median_target_auroc"]),
+            r"Med. tgt pAUC@1\%": _format_metric(source_summary["median_target_pauc"]),
+            r"Med. FPR$\times$": _format_metric(source_summary["median_budget_multiple"]),
+            count_header: str(int(source_summary["catastrophic_count"])),
+        },
+        {
+            "Method": "CORAL",
+            "Med. tgt AUROC": _format_metric(coral_summary["median_target_auroc"]),
+            r"Med. tgt pAUC@1\%": _format_metric(coral_summary["median_target_pauc"]),
+            r"Med. FPR$\times$": _format_metric(coral_summary["median_budget_multiple"]),
+            count_header: str(int(coral_summary["catastrophic_count"])),
+        },
+    ]
+    if not compact:
+        rows[0]["Rank fail./18"] = str(int(source_summary["ranking_failure_count"]))
+        rows[1]["Rank fail./18"] = str(int(coral_summary["ranking_failure_count"]))
+    frame = pd.DataFrame(rows)
+    ordered_columns = (
+        ["Method", "Med. tgt AUROC", r"Med. tgt pAUC@1\%", r"Med. FPR$\times$", count_header]
+        if compact
+        else [
+            "Method",
+            "Rank fail./18",
+            "Med. tgt AUROC",
+            r"Med. tgt pAUC@1\%",
+            r"Med. FPR$\times$",
+            count_header,
+        ]
+    )
+    frame = frame[ordered_columns]
+    caption = (
+        rf"Auxiliary unlabeled CORAL comparison on the same {int(source_summary['n_settings'])}-setting competent view used by the source-only benchmark. "
+        r"The target-test partition is split deterministically by group into unlabeled adaptation and held-out evaluation halves; both rows are evaluated on the same held-out target half, while CORAL alone fits on the unlabeled adaptation half. "
+        r"CORAL raises whole-ROC AUROC modestly, but it leaves low-FPR pAUC unchanged and worsens FPR$\times$/Cat., so this auxiliary adaptation check supports rather than overturns the deployment diagnosis."
+    )
+    return _latex_wrap_table(
+        _dataframe_to_latex(
+            frame,
+            alignment="lrrrr" if compact else "llrrrr",
+        ),
+        caption,
+        label,
+        font_size=r"\scriptsize",
+        tabcolsep="3pt" if compact else "2pt",
+    )
+
+
+def _acsac_monitor_table(monitor: pd.DataFrame) -> str:
+    frame = monitor.loc[monitor["subset"] == "all_natural"].copy()
+    frame["score_name"] = frame["score_name"].map(MONITOR_LABELS)
+    frame = frame.rename(
+        columns={
+            "score_name": "Score",
+            "catastrophic_auroc": "Catastrophic AUROC",
+            "catastrophic_auprc": "Catastrophic AUPRC",
+            "spearman_vs_operational_severity": "Spearman",
+        }
+    )[["Score", "Catastrophic AUROC", "Catastrophic AUPRC", "Spearman"]]
+    for column in ["Catastrophic AUROC", "Catastrophic AUPRC", "Spearman"]:
+        frame[column] = frame[column].map(_format_metric)
+    tabular = _dataframe_to_latex(frame, alignment="lrrr")
+    return _latex_wrap_table(
+        tabular,
+        (
+            r"All-natural monitor comparison under the operational-severity target. "
+            r"Higher is better; the table remains a negative-result audit rather "
+            r"than a method claim."
+        ),
+        "tab:acsac-monitor",
+        font_size=r"\scriptsize",
+    )
+
+
+def _direction_label(source_dataset: str, target_dataset: str) -> str:
+    return f"{DATASET_SHORT[source_dataset]}→{DATASET_SHORT[target_dataset]}"
+
+
+def _latex_direction_label(source_dataset: str, target_dataset: str) -> str:
+    return f"{DATASET_SHORT[source_dataset]}$\\to${DATASET_SHORT[target_dataset]}"
+
+
+def _direction_summary(cross: pd.DataFrame) -> pd.DataFrame:
+    summary = (
+        cross.groupby(["source_dataset", "target_dataset", "oracle_alpha_scope"], as_index=False)
+        .agg(
+            median_target_tpr=("target_tpr_at_1pct_fpr", "median"),
+            median_realized_fpr=("target_realized_fpr", "median"),
+            min_target_tpr=("target_tpr_at_1pct_fpr", "min"),
+            max_realized_fpr=("target_realized_fpr", "max"),
+            median_relative_tpr_drop=("relative_tpr_drop", "median"),
+        )
+    )
+    summary["direction"] = summary.apply(
+        lambda row: _direction_label(row["source_dataset"], row["target_dataset"]),
+        axis=1,
+    )
+    direction_order = {_direction_label(*pair): index for index, pair in enumerate(DIRECTION_ORDER)}
+    return (
+        summary.assign(direction_order=summary["direction"].map(direction_order))
+        .sort_values("direction_order")
+        .drop(columns=["direction_order"])
+        .reset_index(drop=True)
+    )
+
+
+def _primary_direction_summary(primary: pd.DataFrame) -> pd.DataFrame:
+    summary = (
+        primary.groupby(["source_dataset", "target_dataset"], as_index=False)
+        .agg(
+            oracle_alpha=("oracle_alpha", "mean"),
+            mean_relative_tpr_drop=("relative_tpr_drop", "mean"),
+            mean_target_tpr=("target_tpr_at_1pct_fpr", "mean"),
+            mean_realized_fpr=("target_realized_fpr", "mean"),
+            catastrophic_count=("catastrophic_operational_failure", "sum"),
+            competent_model_count=("model", "nunique"),
+        )
+    )
+    summary["direction"] = summary.apply(
+        lambda row: _direction_label(row["source_dataset"], row["target_dataset"]),
+        axis=1,
+    )
+    direction_order = {_direction_label(*pair): index for index, pair in enumerate(DIRECTION_ORDER)}
+    return (
+        summary.assign(direction_order=summary["direction"].map(direction_order))
+        .sort_values("direction_order")
+        .drop(columns=["direction_order"])
+        .reset_index(drop=True)
+    )
+
+
+def _retuned_direction_summary(target_retuned: pd.DataFrame) -> pd.DataFrame:
+    summary = (
+        target_retuned.groupby(["source_dataset", "target_dataset"], as_index=False)
+        .agg(
+            median_fixed_target_tpr=("fixed_target_tpr_at_1pct_fpr", "median"),
+            median_oracle_target_tpr=("oracle_target_tpr_at_1pct_fpr", "median"),
+            median_retuned_tpr_gain=("retuned_tpr_gain", "median"),
+            median_fixed_target_fpr=("fixed_target_realized_fpr", "median"),
+        )
+    )
+    summary["direction"] = summary.apply(
+        lambda row: _direction_label(row["source_dataset"], row["target_dataset"]),
+        axis=1,
+    )
+    direction_order = {_direction_label(*pair): index for index, pair in enumerate(DIRECTION_ORDER)}
+    return (
+        summary.assign(direction_order=summary["direction"].map(direction_order))
+        .sort_values("direction_order")
+        .drop(columns=["direction_order"])
+        .reset_index(drop=True)
+    )
+
+
+def _plot_transfer_heatmap(
+    cross: pd.DataFrame,
+    pdf_path: Path,
+    png_path: Path,
+    *,
+    column: str,
+    title: str,
+    cmap: str,
+    figsize: tuple[float, float],
+    title_fontsize: float,
+    tick_fontsize: float,
+    value_fontsize: float,
+    value_digits: int,
+    cbar_fraction: float,
+    cbar_pad: float,
+    cbar_ticksize: float,
+) -> None:
+    figure, axis = plt.subplots(figsize=figsize, constrained_layout=True)
+    matrix_frame = cross.copy()
+    matrix_frame["direction"] = matrix_frame.apply(
+        lambda row: _direction_label(row["source_dataset"], row["target_dataset"]),
+        axis=1,
+    )
+
+    direction_labels = [_direction_label(*pair) for pair in DIRECTION_ORDER]
+    models_in_frame = _ordered_models_in_frame(matrix_frame)
+    model_labels = [MODEL_LABELS[name] for name in models_in_frame]
+
+    matrix = np.zeros((len(direction_labels), len(model_labels)), dtype=float)
+    for row_index, direction in enumerate(direction_labels):
+        for col_index, model in enumerate(models_in_frame):
+            value = matrix_frame.loc[
+                (matrix_frame["direction"] == direction)
+                & (matrix_frame["model"] == model),
+                column,
+            ].iloc[0]
+            matrix[row_index, col_index] = float(value)
+    image = axis.imshow(matrix, cmap=cmap, vmin=0.0, vmax=1.0, aspect="auto")
+    axis.set_title(title, fontsize=title_fontsize)
+    axis.set_xticks(range(len(model_labels)))
+    axis.set_xticklabels(model_labels, fontsize=tick_fontsize)
+    axis.set_yticks(range(len(direction_labels)))
+    axis.set_yticklabels(direction_labels, fontsize=tick_fontsize)
+    for row_index in range(matrix.shape[0]):
+        for col_index in range(matrix.shape[1]):
+            value = matrix[row_index, col_index]
+            value_text = axis.text(
+                col_index,
+                row_index,
+                f"{value:.{value_digits}f}",
+                ha="center",
+                va="center",
+                fontsize=value_fontsize + 0.6,
+                color="white",
+                fontweight="bold",
+            )
+            _apply_outlined_white_text(value_text, linewidth=1.25)
+    cbar = figure.colorbar(image, ax=axis, fraction=cbar_fraction, pad=cbar_pad)
+    cbar.ax.tick_params(labelsize=cbar_ticksize)
+
+    _save_figure(figure, pdf_path, png_path)
+
+
+def _apply_outlined_white_text(text_obj, *, linewidth: float) -> None:
+    text_obj.set_color("white")
+    text_obj.set_path_effects(
+        [
+            path_effects.Stroke(linewidth=linewidth, foreground="black"),
+            path_effects.Normal(),
+        ]
+    )
+
+
+def _model_jitter_offsets() -> dict[str, float]:
+    if len(MODEL_ORDER) == 1:
+        return {MODEL_ORDER[0]: 0.0}
+    offsets = np.linspace(-0.02, 0.02, num=len(MODEL_ORDER))
+    return {model: float(offsets[idx]) for idx, model in enumerate(MODEL_ORDER)}
+
+
+def _ordered_models_in_frame(frame: pd.DataFrame) -> list[str]:
+    present = set(frame["model"].astype(str).unique())
+    ordered = [model for model in MODEL_ORDER if model in present]
+    extras = sorted(present.difference(set(ordered)))
+    return ordered + extras
+
+
+def _plot_oracle_novelty(primary: pd.DataFrame, pdf_path: Path, png_path: Path) -> None:
+    figure, axis = plt.subplots(figsize=(7.6, 5.2), constrained_layout=True)
+    jitter_offsets = _model_jitter_offsets()
+
+    primary = primary.copy()
+    primary["direction"] = primary.apply(
+        lambda row: _direction_label(row["source_dataset"], row["target_dataset"]),
+        axis=1,
+    )
+
+    for model in MODEL_ORDER:
+        subset = primary.loc[primary["model"] == model].copy()
+        if subset.empty:
+            continue
+        x_values = subset["oracle_alpha"].astype(float) + jitter_offsets[model]
+        axis.scatter(
+            x_values,
+            subset["relative_tpr_drop"].astype(float),
+            marker=MODEL_MARKERS[model],
+            s=78,
+            label=MODEL_LABELS[model],
+            color="#1f1f1f",
+            edgecolor="white",
+            linewidth=0.6,
+        )
+
+    direction_means = (
+        primary.groupby("direction", as_index=False)
+        .agg(
+            oracle_alpha=("oracle_alpha", "mean"),
+            relative_tpr_drop=("relative_tpr_drop", "mean"),
+        )
+        .sort_values("oracle_alpha")
+    )
+    for row in direction_means.itertuples(index=False):
+        axis.axvline(float(row.oracle_alpha), color="#bbbbbb", linewidth=0.8, linestyle="--")
+        axis.text(
+            float(row.oracle_alpha),
+            float(row.relative_tpr_drop) + 0.04,
+            row.direction,
+            ha="center",
+            va="bottom",
+            fontsize=10,
+        )
+
+    axis.set_xlabel(r"Oracle novelty $\alpha$", fontsize=11)
+    axis.set_ylabel("Relative TPR drop", fontsize=11)
+    axis.set_xlim(-0.05, 0.48)
+    axis.set_ylim(-0.05, 1.05)
+    axis.tick_params(labelsize=10)
+    axis.legend(frameon=False, ncols=4, loc="upper center", fontsize=10)
+    _save_figure(figure, pdf_path, png_path)
+
+
+def _plot_monitor_comparison(
+    monitor: pd.DataFrame,
+    pdf_path: Path,
+    png_path: Path,
+) -> None:
+    figure, axes = plt.subplots(2, 3, figsize=(11.6, 6.9), constrained_layout=True)
+    metric_specs = [
+        ("catastrophic_auroc", "Catastrophic AUROC", (0.0, 1.0)),
+        ("catastrophic_auprc", "Catastrophic AUPRC", (0.0, 1.0)),
+        (
+            "spearman_vs_operational_severity",
+            "Spearman vs. operational severity",
+            (-0.5, 0.6),
+        ),
+    ]
+    subset_titles = {
+        "all_natural": "All natural settings",
+        "primary_iot": "Primary IoT subset",
+    }
+
+    for row_index, subset_name in enumerate(SUBSET_ORDER):
+        subset = monitor.loc[monitor["subset"] == subset_name].copy()
+        subset["score_name"] = pd.Categorical(
+            subset["score_name"],
+            categories=MONITOR_ORDER,
+            ordered=True,
+        )
+        subset = subset.sort_values("score_name").reset_index(drop=True)
+
+        for col_index, (metric, title, x_limits) in enumerate(metric_specs):
+            axis = axes[row_index, col_index]
+            axis.axvline(0.0, color="#cccccc", linewidth=0.8)
+            for point_index, row in enumerate(subset.itertuples(index=False)):
+                value = float(getattr(row, metric))
+                label = str(row.score_name)
+                color = MONITOR_COLORS[label]
+                axis.hlines(point_index, 0.0, value, color="#d9d9d9", linewidth=1.0)
+                axis.scatter(value, point_index, color=color, s=52, zorder=3)
+                if col_index == 0:
+                    axis.text(
+                        x_limits[0] + 0.02,
+                        point_index,
+                        MONITOR_LABELS[label],
+                        va="center",
+                        ha="left",
+                        fontsize=10,
+                    )
+            axis.set_xlim(*x_limits)
+            axis.set_yticks([])
+            axis.set_ylim(-0.5, len(subset) - 0.5)
+            axis.invert_yaxis()
+            if row_index == 0:
+                axis.set_title(title, fontsize=12)
+            if col_index == 0:
+                axis.set_ylabel(subset_titles[subset_name], fontsize=11)
+            axis.tick_params(labelsize=10)
+
+    _save_figure(figure, pdf_path, png_path)
+
+
+def _plot_oracle_novelty_acsac(primary: pd.DataFrame, pdf_path: Path, png_path: Path) -> None:
+    figure, axis = plt.subplots(figsize=(3.45, 2.55), constrained_layout=True)
+    jitter_offsets = _model_jitter_offsets()
+    primary = primary.copy()
+    primary["direction"] = primary.apply(
+        lambda row: _direction_label(row["source_dataset"], row["target_dataset"]),
+        axis=1,
+    )
+
+    for model in MODEL_ORDER:
+        subset = primary.loc[primary["model"] == model].copy()
+        if subset.empty:
+            continue
+        axis.scatter(
+            subset["oracle_alpha"].astype(float) + jitter_offsets[model],
+            subset["relative_tpr_drop"].astype(float),
+            marker=MODEL_MARKERS[model],
+            s=32,
+            label=MODEL_LABELS[model],
+            color="#202020",
+            edgecolor="white",
+            linewidth=0.5,
+        )
+
+    direction_means = _primary_direction_summary(primary)
+    for row in direction_means.itertuples(index=False):
+        axis.axvline(float(row.oracle_alpha), color="#c8c8c8", linewidth=0.7, linestyle="--")
+        axis.text(
+            float(row.oracle_alpha),
+            float(row.mean_relative_tpr_drop) + 0.05,
+            str(row.direction),
+            ha="center",
+            va="bottom",
+            fontsize=6.5,
+        )
+
+    axis.set_xlabel(r"Oracle novelty $\alpha$", fontsize=8)
+    axis.set_ylabel("Relative TPR drop", fontsize=8)
+    axis.set_xlim(-0.05, 0.48)
+    axis.set_ylim(-0.05, 1.05)
+    axis.tick_params(labelsize=7)
+    axis.legend(frameon=False, ncols=2, loc="upper center", fontsize=6.5)
+    _save_figure(figure, pdf_path, png_path)
+
+
+def _save_figure(figure: plt.Figure, pdf_path: Path, png_path: Path) -> None:
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(pdf_path, dpi=300, bbox_inches="tight")
+    figure.savefig(png_path, dpi=300, bbox_inches="tight")
+    plt.close(figure)
+
+
+def write_manuscript_assets(
+    sources: ManuscriptSources,
+    outputs: ManuscriptOutputs,
+) -> dict[str, int]:
+    within = pd.read_csv(sources.within_domain_summary)
+    cross = pd.read_csv(sources.cross_domain_summary)
+    monitor = pd.read_csv(sources.monitor_comparison)
+    primary = pd.read_csv(sources.primary_oracle_context)
+    decision = json.loads(sources.claim_decision.read_text(encoding="utf-8"))
+    target_retuned = pd.read_csv(sources.target_retuned_oracle_baseline)
+    budget_sensitivity = pd.read_csv(sources.fpr_budget_sensitivity)
+    ranking_diagnosis = pd.read_csv(sources.ranking_diagnosis)
+    source_holdout_fpr = pd.read_csv(sources.source_holdout_fpr)
+    recalibration = pd.read_csv(sources.recalibration)
+    direction_covariate_shift = pd.read_csv(sources.direction_covariate_shift)
+    coverage_sensitivity = pd.read_csv(sources.coverage_sensitivity)
+    coral_auxiliary = pd.read_csv(sources.coral_auxiliary)
+
+    _write_text(
+        outputs.within_table,
+        _within_domain_table(within, ranking_diagnosis, source_holdout_fpr),
+    )
+    _write_text(outputs.cross_table, _cross_domain_table(cross))
+    _write_text(outputs.monitor_table, _monitor_table(monitor))
+    _write_text(outputs.primary_table, _primary_oracle_table(primary))
+    _write_text(outputs.ranking_diagnosis_table, _ranking_diagnosis_table(ranking_diagnosis))
+    competent_pairs = _competent_source_pairs(ranking_diagnosis, source_holdout_fpr)
+    _write_text(
+        outputs.budget_robustness_table,
+        _budget_robustness_table(
+            budget_sensitivity,
+            competent_pairs,
+            "tab:budget-robustness",
+            compact=False,
+        ),
+    )
+    _write_text(
+        outputs.oracle_retuned_summary_table,
+        _oracle_retuned_summary_table(target_retuned, "tab:oracle-retuned-summary"),
+    )
+    _write_text(
+        outputs.coral_auxiliary_table,
+        _coral_auxiliary_table(
+            coral_auxiliary,
+            competent_pairs,
+            label="tab:coral-auxiliary",
+            compact=False,
+        ),
+    )
+    _write_text(
+        outputs.manuscript_numbers,
+        _build_numbers_macros(
+            within,
+            cross,
+            monitor,
+            primary,
+            decision,
+            target_retuned,
+            budget_sensitivity,
+            ranking_diagnosis,
+            source_holdout_fpr,
+            recalibration,
+            direction_covariate_shift,
+            coverage_sensitivity,
+            coral_auxiliary,
+        ),
+    )
+
+    _plot_transfer_heatmap(
+        cross,
+        outputs.transfer_tpr_figure_pdf,
+        outputs.transfer_tpr_figure_png,
+        column="target_tpr_at_1pct_fpr",
+        title="Target TPR@1%",
+        cmap="viridis",
+        figsize=(11.6, 4.8),
+        title_fontsize=12,
+        tick_fontsize=10,
+        value_fontsize=8.5,
+        value_digits=3,
+        cbar_fraction=0.046,
+        cbar_pad=0.04,
+        cbar_ticksize=9,
+    )
+    _plot_transfer_heatmap(
+        cross,
+        outputs.transfer_fpr_figure_pdf,
+        outputs.transfer_fpr_figure_png,
+        column="target_realized_fpr",
+        title="Target realized FPR",
+        cmap="cividis",
+        figsize=(11.6, 4.8),
+        title_fontsize=12,
+        tick_fontsize=10,
+        value_fontsize=8.5,
+        value_digits=3,
+        cbar_fraction=0.046,
+        cbar_pad=0.04,
+        cbar_ticksize=9,
+    )
+    _plot_oracle_novelty(primary, outputs.oracle_figure_pdf, outputs.oracle_figure_png)
+    _plot_monitor_comparison(monitor, outputs.monitor_figure_pdf, outputs.monitor_figure_png)
+
+    return {
+        "within_rows": int(len(within)),
+        "cross_rows": int(len(cross)),
+        "monitor_rows": int(len(monitor)),
+        "primary_rows": int(len(primary)),
+    }
+
+
+def write_acsac_assets(
+    sources: ManuscriptSources,
+    outputs: AcsacOutputs,
+) -> dict[str, int]:
+    within = pd.read_csv(sources.within_domain_summary)
+    cross = pd.read_csv(sources.cross_domain_summary)
+    monitor = pd.read_csv(sources.monitor_comparison)
+    primary = pd.read_csv(sources.primary_oracle_context)
+    target_retuned = pd.read_csv(sources.target_retuned_oracle_baseline)
+    budget_sensitivity = pd.read_csv(sources.fpr_budget_sensitivity)
+    ranking_diagnosis = pd.read_csv(sources.ranking_diagnosis)
+    source_holdout_fpr = pd.read_csv(sources.source_holdout_fpr)
+    coral_auxiliary = pd.read_csv(sources.coral_auxiliary)
+    competent_pairs = _competent_source_pairs(ranking_diagnosis, source_holdout_fpr)
+    _write_text(
+        outputs.source_table,
+        _acsac_source_quality_table(within, ranking_diagnosis, source_holdout_fpr),
+    )
+    _write_text(outputs.within_table, _acsac_within_table(within))
+    _write_text(outputs.cross_table, _acsac_cross_summary_table(cross))
+    _write_text(outputs.monitor_table, _acsac_monitor_table(monitor))
+    _write_text(outputs.oracle_table, _acsac_oracle_direction_table(primary, competent_pairs))
+    _write_text(outputs.collapse_table, _acsac_collapse_table(ranking_diagnosis, competent_pairs))
+    _write_text(
+        outputs.budget_robustness_table,
+        _budget_robustness_table(
+            budget_sensitivity,
+            competent_pairs,
+            "tab:acsac-budget-robustness",
+            compact=True,
+        ),
+    )
+    _write_text(
+        outputs.oracle_retuned_summary_table,
+        _oracle_retuned_summary_table(target_retuned, "tab:acsac-oracle-retuned"),
+    )
+    _write_text(
+        outputs.coral_auxiliary_table,
+        _coral_auxiliary_table(
+            coral_auxiliary,
+            competent_pairs,
+            label="tab:acsac-coral-auxiliary",
+            compact=True,
+        ),
+    )
+    _plot_transfer_heatmap(
+        cross,
+        outputs.transfer_tpr_figure_pdf,
+        outputs.transfer_tpr_figure_png,
+        column="target_tpr_at_1pct_fpr",
+        title="Target TPR@1%",
+        cmap="viridis",
+        figsize=(3.15, 3.85),
+        title_fontsize=9.5,
+        tick_fontsize=8.5,
+        value_fontsize=7.2,
+        value_digits=2,
+        cbar_fraction=0.06,
+        cbar_pad=0.03,
+        cbar_ticksize=7.5,
+    )
+    _plot_transfer_heatmap(
+        cross,
+        outputs.transfer_fpr_figure_pdf,
+        outputs.transfer_fpr_figure_png,
+        column="target_realized_fpr",
+        title="Target FPR",
+        cmap="cividis",
+        figsize=(3.15, 3.85),
+        title_fontsize=9.5,
+        tick_fontsize=8.5,
+        value_fontsize=7.2,
+        value_digits=2,
+        cbar_fraction=0.06,
+        cbar_pad=0.03,
+        cbar_ticksize=7.5,
+    )
+    _plot_oracle_novelty_acsac(primary, outputs.oracle_figure_pdf, outputs.oracle_figure_png)
+
+    return {
+        "within_rows": int(len(within)),
+        "cross_rows": int(len(cross)),
+        "monitor_rows": int(len(monitor.loc[monitor["subset"] == "all_natural"])),
+        "primary_rows": int(len(primary)),
+        "direction_rows": int(len(_direction_summary(cross))),
+    }

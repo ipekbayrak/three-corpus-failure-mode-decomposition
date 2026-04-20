@@ -1,0 +1,46 @@
+claim_id,artifact_id,source_path,locator,description
+hero_figure_path,hero_figure,artifacts/figures/hero_novelty_vs_loss.png,file,Hero figure for oracle novelty vs relative transfer loss
+within_domain_summary_path,within_domain_summary,artifacts/tables/within_domain_summary.csv,file,Canonical within-domain benchmark summary table
+cross_domain_summary_path,cross_domain_summary,artifacts/tables/cross_domain_summary.csv,file,Canonical cross-domain benchmark summary table
+source_holdout_fpr_path,source_holdout_fpr,artifacts/tables/source_holdout_fpr.csv,file,Source-holdout realized FPR table used by the competence audit
+ranking_diagnosis_path,ranking_diagnosis,artifacts/tables/ranking_diagnosis.csv,file,Ranking diagnosis table with supporting low-FPR pAUC fields
+decision_summary_path,decision_summary,artifacts/tables/decision_summary.csv,file,Decision evaluation summary table
+full_data_monitor_comparison_path,full_data_monitor_comparison,artifacts/claims/full_data_monitor_comparison.csv,file,Full-data deployable monitor comparison table
+full_data_primary_oracle_context_path,full_data_primary_oracle_context,artifacts/claims/full_data_primary_oracle_context.csv,file,Full-data primary oracle context table
+full_data_claim_decision_path,full_data_claim_decision,artifacts/claims/full_data_claim_decision.json,file,Full-data alpha_hat claim decision JSON
+full_data_claim_summary_path,full_data_claim_summary,artifacts/claims/full_data_claim_summary.md,file,Full-data alpha_hat claim summary memo
+acsac_target_retuned_oracle_baseline_path,acsac_target_retuned_oracle_baseline,artifacts/acsac/target_retuned_oracle_baseline.csv,file,ACSAC target-retuned oracle diagnostic derived from frozen benchmark predictions
+acsac_fpr_budget_sensitivity_path,acsac_fpr_budget_sensitivity,artifacts/acsac/fpr_budget_sensitivity.csv,file,ACSAC source-selected FPR-budget sensitivity diagnostic derived from frozen benchmark predictions
+native_auxiliary_summary_path,native_auxiliary_summary,artifacts/aux_native/within_domain_summary.csv,file,Auxiliary within-domain native-feature information-retention summary
+schema_feature_schema_csv_path,schema_feature_schema_csv,artifacts/schema/shared_feature_schema.csv,file,Generated shared feature schema artifact
+schema_raw_mapping_csv_path,schema_raw_mapping_csv,artifacts/schema/raw_to_primitive_mapping.csv,file,Generated dataset-to-primitive mapping artifact
+schema_discarded_columns_csv_path,schema_discarded_columns_csv,artifacts/schema/discarded_source_columns.csv,file,Generated discarded source-columns artifact
+paper_shared_feature_schema_table_path,paper_shared_feature_schema_table,paper/tables/shared_feature_schema.tex,file,Journal shared feature schema inline table
+acsac_shared_feature_schema_table_path,acsac_shared_feature_schema_table,paper/acsac/tables/shared_feature_schema.tex,file,ACSAC shared feature schema inline table
+recalibration_csv_path,recalibration_csv,artifacts/recalibration/unlabeled_recalibration.csv,file,Benign-only recalibration audit with disjoint calibration and evaluation splits
+acsac_recalibration_table_path,acsac_recalibration_table,paper/acsac/tables/recalibration.tex,file,ACSAC recalibration table generated from the recalibration audit
+paper_within_domain_table_path,paper_within_domain_table,paper/tables/within_domain.tex,file,Within-domain manuscript table generated from canonical benchmark artifacts
+paper_cross_domain_table_path,paper_cross_domain_table,paper/tables/cross_domain.tex,file,Cross-domain manuscript table generated from canonical benchmark artifacts
+paper_monitor_comparison_table_path,paper_monitor_comparison_table,paper/tables/monitor_comparison.tex,file,Deployable monitor comparison manuscript table generated from canonical artifacts
+paper_primary_oracle_context_table_path,paper_primary_oracle_context_table,paper/tables/primary_oracle_context.tex,file,Primary oracle-context manuscript table generated from canonical artifacts
+paper_manuscript_numbers_path,paper_manuscript_numbers,paper/tables/manuscript_numbers.tex,file,Generated LaTeX numeric macros used by manuscript prose
+paper_manuscript_pdf_path,paper_manuscript_pdf,paper/manuscript.pdf,file,Compiled manuscript PDF for the current canonical submission package
+paper_transfer_tpr_figure_pdf_path,paper_transfer_tpr_figure_pdf,paper/figures/transfer_tpr.pdf,file,Cross-domain transfer target-TPR manuscript figure (PDF)
+paper_transfer_tpr_figure_png_path,paper_transfer_tpr_figure_png,paper/figures/transfer_tpr.png,file,Cross-domain transfer target-TPR manuscript figure (PNG)
+paper_transfer_fpr_figure_pdf_path,paper_transfer_fpr_figure_pdf,paper/figures/transfer_fpr.pdf,file,Cross-domain transfer realized-FPR manuscript figure (PDF)
+paper_transfer_fpr_figure_png_path,paper_transfer_fpr_figure_png,paper/figures/transfer_fpr.png,file,Cross-domain transfer realized-FPR manuscript figure (PNG)
+paper_oracle_novelty_figure_pdf_path,paper_oracle_novelty_figure_pdf,paper/figures/oracle_novelty_primary.pdf,file,Primary oracle novelty manuscript figure (PDF)
+paper_oracle_novelty_figure_png_path,paper_oracle_novelty_figure_png,paper/figures/oracle_novelty_primary.png,file,Primary oracle novelty manuscript figure (PNG)
+paper_monitor_comparison_figure_pdf_path,paper_monitor_comparison_figure_pdf,paper/figures/monitor_comparison.pdf,file,Deployable monitor comparison manuscript figure (PDF)
+paper_monitor_comparison_figure_png_path,paper_monitor_comparison_figure_png,paper/figures/monitor_comparison.png,file,Deployable monitor comparison manuscript figure (PNG)
+acsac_within_domain_table_path,acsac_within_domain_table,paper/acsac/tables/within_domain.tex,file,ACSAC within-domain manuscript table generated from canonical benchmark artifacts
+acsac_cross_domain_summary_table_path,acsac_cross_domain_summary_table,paper/acsac/tables/cross_domain_summary.tex,file,ACSAC cross-domain summary table generated from canonical benchmark artifacts
+acsac_monitor_comparison_table_path,acsac_monitor_comparison_table,paper/acsac/tables/monitor_comparison.tex,file,ACSAC monitor comparison table generated from canonical artifacts
+acsac_oracle_direction_table_path,acsac_oracle_direction_table,paper/acsac/tables/oracle_direction.tex,file,ACSAC oracle-direction table generated from canonical artifacts
+acsac_transfer_tpr_figure_pdf_path,acsac_transfer_tpr_figure_pdf,paper/acsac/figures/transfer_tpr.pdf,file,ACSAC transfer target-TPR figure (PDF)
+acsac_transfer_tpr_figure_png_path,acsac_transfer_tpr_figure_png,paper/acsac/figures/transfer_tpr.png,file,ACSAC transfer target-TPR figure (PNG)
+acsac_transfer_fpr_figure_pdf_path,acsac_transfer_fpr_figure_pdf,paper/acsac/figures/transfer_fpr.pdf,file,ACSAC transfer realized-FPR figure (PDF)
+acsac_transfer_fpr_figure_png_path,acsac_transfer_fpr_figure_png,paper/acsac/figures/transfer_fpr.png,file,ACSAC transfer realized-FPR figure (PNG)
+acsac_oracle_novelty_figure_pdf_path,acsac_oracle_novelty_figure_pdf,paper/acsac/figures/oracle_novelty_primary.pdf,file,ACSAC oracle novelty figure (PDF)
+acsac_oracle_novelty_figure_png_path,acsac_oracle_novelty_figure_png,paper/acsac/figures/oracle_novelty_primary.png,file,ACSAC oracle novelty figure (PNG)
+acsac_manuscript_pdf_path,acsac_manuscript_pdf,paper/acsac/manuscript.pdf,file,Compiled anonymous ACSAC manuscript PDF

@@ -1,0 +1,280 @@
+Operational IoT Intrusion Detection under Domain Shift with a Lipschitz-Constrained MDP Decoder
+
+
+Intrusion detection in operational IoT networks has two hard constraints that papers often gloss over: attacks are rare, so even a “small” false positive rate can drown a SOC in alerts, and the score you output needs to behave like a real risk estimate if it will be used for triage. This work treats those constraints as first class requirements and evaluates detectors the way they are deployed. Our protocol is simple on purpose. We train in one environment (IoT23 split A), choose the alert threshold once using only the validation negatives from that same environment, and then keep that threshold frozen. Without any re tuning, we test on IoT23 A (test), IoT23 B (a different split with a different device/family mix), and ToN IoT (a separate dataset). We start with two strong but practical baselines—logistic regression and XGBoost—and then focus on making their outputs usable: we apply Platt scaling followed by isotonic regression so that a “90%” score means something close to 90% in practice, not just “high rank.” To make the system less jumpy when the data distribution shifts, we add a small, interpretable MDP style decoder and constrain it to be 1 Lipschitz. The point is not to magically prevent performance drop under shift; it is to bound how much the decoder’s summary value can move when the input drifts within a chosen radius, so analysts can tell the difference between “real change” and “model noise.” We also release the checks needed to audit this claim (operator norms, row stochasticity tests, and measured Lipschitz constants). With thresholds fixed, the practical gap becomes obvious at the operating points that matter. IoT23 A is near perfect, but at a 1% false positive rate the true positive rate drops to 0.601 on IoT23 B and to 0.196 on ToN IoT (0.572/0.633 on IoT23 B and 0.142/0.316 on ToN IoT at 0.5%/2%). Calibration improves the trustworthiness of reported probabilities: isotonic regression reduces expected calibration error to 0.003 (IoT23 A), 0.014 (IoT23 B), and 0.077 (ToN IoT). Finally, the stability certificate is conservative but informative: across tested drift radii, observed value changes are typically one to two orders of magnitude below the certified budget, and at discount factor 0.90 (top 4 support) the transition term dominates the bound.
+Keywords: IoT intrusion detection; low false positive evaluation; threshold transfer; domain shift; probability calibration; isotonic regression; Lipschitz constraint; certified stability; XGBoost; logistic regression
+WHAT IS ALREADY KNOWN ON THIS TOPIC?
+	IoT intrusion detection must run at very low false positive rates, otherwise rare attacks get buried under routine noise.
+	Post hoc calibration can make scores more meaningful for triage, but calibration quality often degrades when the test environment shifts.
+WHAT THIS STUDY ADDS ON THIS TOPIC?
+	A deployment faithful evaluation setup: pick thresholds once on IoT23 A validation negatives and carry them unchanged across IoT23 A test, IoT23 B, and ToN IoT to expose real transfer gaps at low FPR operating points.
+	A practical “trust layer” on top of standard detectors: calibration improves probability reliability, and a Lipschitz constrained MDP decoder provides an auditable bound on how much the decoded value can change under bounded drift.
+
+
+1. INTRODUCTION
+IoT intrusion detection must operate at very low false–positive rates (FPR) because attacks are rare and alert budgets are finite. In production security operations centers (SOCs), a seemingly modest FPR quickly translates into an unsustainable volume of benign alerts due to the base–rate problem [1]. As a result, detectors are deployed at FPRs on the order of ≤1−2%, sometimes far lower, and are expected to output calibrated probabilities so analysts can triage consistently. Classic ranking metrics (ROC–AUC, PR–AUC) are necessary but not sufficient: two models with similar AUCs can produce very different true–positive rates (TPR) at the stringent operating points that matter, and poorly calibrated scores can mislead downstream prioritization [2], [3], [4], [5]. These operational constraints motivate an evaluation and modeling approach that foregrounds low–FPR behavior and probability calibration rather than optimizing only for global ranking.
+Despite progress, common evaluation practices mask overfitting and overstate generalization. A large fraction of recent IoT intrusion–detection results rely on random splits of a single public corpus, inadvertently entangling devices and attack families across train/test; protocol and capture biases further inflate apparent performance, and thresholds are often tuned post hoc on the test set. To counter these pitfalls, we construct device– and family–disjoint splits on IoT–23 (denoted IoT23–A and IoT23–B) and evaluate out of domain on ToN–IoT [6], [7]. This forces models to face unseen devices and malware families in–domain and then a shifted environment cross–domain, while our operating thresholds are fixed once on validation negatives and transferred unchanged—no test–time retuning.
+We pair strong, transparent detectors with a certified analysis layer designed for stability under drift. Concretely, we train logistic regression and XGBoost baselines with class weighting on chronologically split IoT23–A, learn thresholds on IoT23–A validation negatives, and freeze and transfer those thresholds to IoT23–A test, IoT23–B, and ToN–IoT. We first apply Platt scaling and then an isotonic calibrator, which improves probability calibration without altering ranking because it is monotone [8], [9], [10], [5]. In parallel, we introduce a Lipschitz–constrained, row–local decoder that maps each 300s window to a small, interpretable MDP; simplex projections with fixed top–k support makes transitions valid and sparse, and the Lipschitz control yields a closed–form value–stability certificate for bounded input drift [11], [12], [13], [14], [15], [16], [17].
+	Research Questions
+	RQ1: Under fixed low–FPR thresholds, how do detectors generalize from IoT23–A to IoT23–B and ToN–IoT?
+	RQ2: Does isotonic calibration maintain ranking while improving calibration, and how does calibration behave under controlled input drift?
+	RQ3: Are the proposed value–stability certificates non–vacuous (good tightness/coverage), and which components dominate the bound?
+	Contributions
+	This paper is about making IoT intrusion detection results look like real deployment, not a clean lab split. We set the alarm threshold once using only IoT23 A validation negatives, and then carry that same threshold unchanged to IoT23 A test, IoT23 B, and ToN IoT. Instead of only reporting “overall” numbers, we report what matters in practice: TPR at very low false-positive rates (0.5/1/2% FPR), together with ROC AUC, PR AUC, and calibration error (ECE with equal mass bins) [4].
+	We also treat calibration as a first class problem under domain shift. Reliability diagrams plus controlled drift probes (both random and detector aligned) show clearly when the confidence scores stay meaningful and when they start lying [18].
+	On the decision side, we introduce an auditable, certifiable module: a row local 1 Lipschitz MDP decoder with simplex projections and fixed top k support. This structure lets us give deterministic, window level value stability bounds, and we make the guarantees checkable by releasing the layer wise operator norms, row stochasticity checks, and measured Lipschitz constants (global and local median). Finally, we show these certificates are not just “theory”: in experiments, the observed drops in value are typically 10–100× smaller than the certified budget, with coverage close to 1 across radii [11–15].
+Results show realistic generalization gaps, strong calibration gains, and non–vacuous certificates. Under fixed thresholds (no test–time tuning), IoT23–A is near–perfect (reflecting a favorable class/operating mix), while on IoT23–B we obtain TPR@{0.5,1,2}% = {0.572,0.601,0.633}, and on ToN–IoT we obtain {0.142,0.196,0.316}. Isotonic calibration improves ECE to 0.003/0.014/0.077 on A/B/ToN–IoT without changing ROC/TPR (monotonicity). The value–stability certificates are conservative but informative: tightness ratios lie far below 1 with coverage ≈1.0 across radii, and decomposition shows the transition term dominates the bound at γ=0.90 and support k=4.
+We certify stability of the decoded value (a behavior summary), not label invariance; classification may still flip near decision boundaries. Split–A’s near–separation likely reflects data composition rather than leakage: all preprocessing (z–scaler) and calibration are fit on A–train/A–val only, and devices/families are disjoint across splits by construction [6], [7]. Our detectors operate on engineered flow features (no payload or binary scanning), which aligns with many network–monitoring deployments but does not cover all intrusion modalities.
+Section II situates our work within IoT IDS, calibration, and robustness. Section III details datasets, splits, detectors, calibration, robustness probes, and the certified decoder. Section IV reports low–FPR detection, calibration under drift, certificate tightness/coverage, and ablations. Section V interprets the findings, limitations, and deployment guidance, and Section VI concludes.
+
+2. RELATED WORK
+Most recent work on IoT intrusion detection evaluates on a small set of public corpora. IoT 23 provides labeled captures that mix benign device activity with diverse malware families [6], while ToN_IoT expands the setting with heterogeneous telemetry that is closer to operational environments [7]. Surveys have also noted common pitfalls—class imbalance, outdated attack mixes, and protocol bias—that make it hard to compare results across papers and to trust generalization beyond a single dataset [19]. At the same time, the base rate problem tells us that even a small false positive rate (FPR) can overwhelm analysts because attacks are rare [1]. These facts motivate an evaluation that goes beyond random splits: we separate training and testing by devices and malware families on IoT 23 and then test under domain shift on ToN_IoT [6], [7]. Our detector operates at the network–behavior level: the unit is a 300 s traffic window with engineered flow features, and the task is to decide whether that window is benign or malicious. It does not scan binaries or label individual packets in isolation; it looks for behavioral patterns that IoT malware produces on the wire.
+Metrics and operating points matter when events are rare. ROC curves give a global view of the TPR–FPR trade off [2], while Precision–Recall (PR) curves are often more informative under heavy class imbalance [3]. In practice, however, SOCs run detectors at very low FPRs because of alert budgets [1]. Following this, we focus on TPR at fixed FPR (e.g., 0.5%, 1%, 2%) alongside ROC AUC/PR AUC, and we fix thresholds on a validation split and transfer them unchanged to all test sets—mirroring deployment rather than post hoc tuning.
+Probability calibration is just as important as ranking. Simple, effective post hoc methods such as Platt (sigmoid) and isotonic regression map raw scores to better calibrated probabilities [8], [9], [10]; temperature scaling is a strong one parameter baseline for neural models [5]. Because histogram estimates can be biased by empty or tiny bins, we compute Expected Calibration Error (ECE) with equal mass (quantile) bins and visualize with reliability diagrams [4], [20]. Past work shows that calibration typically worsens under distribution shift [18], which is why we evaluate both before/after calibration and under controlled input drift.
+Strong, transparent baselines remain useful in network security, so we include ℓ2 regularized logistic regression and XGBoost with class weighting and post hoc calibration [21], [10], [5]. All models are evaluated under the same low FPR, threshold transfer protocol described above.
+A complementary line of research studies how to constrain networks so their outputs change in a controlled way when inputs are perturbed. GroupSort activations together with norm bounded linear layers yield 1 Lipschitz networks [11]; spectral normalization enforces per layer operator norms [12]; and broader regularization frameworks make Lipschitz control practical during training [13]. These ideas enable formal bounds on sensitivity, not just empirical robustness.
+Our approach builds on this literature but aims at an interpretable, sequential abstraction. We introduce a Lipschitz constrained row local decoder that maps each 300 s window to a small MDP (R, P) using a 1 Lipschitz backbone and heads. We enforce row stochastic transitions by efficient projection onto the probability simplex [14] (fast related projections also exist [15]) and restrict each row to a top k support to make transitions sparse and easier to read. With verified global and local Lipschitz constants for x → (R, P), we derive formal bounds on how much the optimal value can change under bounded input drift. In plain terms: small changes in standardized features cannot cause large changes in the decoded value.
+This target differs from most certification work, which aims to certify classification stability. Convex outer relaxations [22], semidefinite relaxations [23], and randomized smoothing [24] provide guarantees for logits or labels under norm bounded perturbations. We instead certify value stability of a compact MDP that analysts can inspect. The guarantee is deterministic (no sampling), benefits from row local sparsity, and plugs into a standard detection pipeline.
+Finally, classical dynamic programming gives us efficient and exact value iteration on small discounted MDPs [16], [17]. Separating model learning (produce (R, P) with checked norms and valid rows) from planning (compute V⋆) lets us publish verification artifacts—layer operator norms, projection checks, and Lipschitz constants—and gives users a score whose inner workings (rewards, transitions, and value) are open to inspection.
+Taken together, prior work points to three needs that we address jointly: evaluate at operational low FPRs with thresholds fixed on validation and transferred to unseen devices, unseen families, and a shifted domain [6], [7], [1]; deliver calibrated probabilities that remain useful off the i.i.d. path [8], [9], [10], [5], [4], [20], [18]; and add formal bounds through a Lipschitz constrained, row local decoder whose MDP abstraction makes behavior both effective and certifiably reliable [11], [12], [13], [14], [15], [22], [23], [24], [16], [17].
+3. METHODOLOGY
+This section specifies the problem, the datasets, the data processing and splitting, the baseline intrusion detectors (training, calibration, operating points), the robustness probes, and the certified value–stability analysis based on a Lipschitz–constrained row local decoder. We emphasize leak free design (train only statistics; device/family disjointness), unambiguous threshold transfer, and explicit verification artifacts that justify the formal bounds.
+3.1. Problem Statement and Design Principles
+Given a fixed length network traffic window x\in\operatorname{R}^d, (i) detect whether the window is malicious (y\in{0,1}) using conventional classifiers, and (ii) independently, decode an MDP that summarizes the window’s local dynamics and supports provable robustness guarantees.
+Real intrusion detection is operated at very low false positive rates (FPR) because of base rate concerns [1]. Since thresholds are transferred, the achieved FPR on other domains may differ from the target rates (0.5%, 1%, 2%). Since models face device heterogeneity and dataset shift [19], [18], we (a) partition IoT 23 into device  and family disjoint splits, and (b) evaluate out of domain on ToN_IoT.
+3.2.  Datasets and Splits
+IoT 23 [6] is a labeled mix of benign/malicious IoT traffic with family annotations and ToN_IoT [7] is an external corpus collected in different environments and with heterogeneous attacks.
+	A/B split construction (IoT 23). Let \mathcal{F}be the set of malicious families in IoT 23. We partition \mathcal{F}=\operatorname{F}_A\cup\operatorname{F}_B, \operatorname{F}_A\cap\operatorname{F}_B=\emptyset. Each device dis assigned to split A or B such that no device and no malicious family appears in both splits. Benign only devices are allocated to balance negatives. This yields two in domain but family/device disjoint evaluation sets. We persist manifests (device lists; window ranges; counts) for auditability.
+	Temporal subdivision of split A. For split A only, each device timeline is cut chronologically into train/val/test partitions (≈60/20/20). We denote the held out portion as A_test. Split B and ToN_IoT are held out test sets (no tuning).
+3.3. Windowing, Features, and Standardization
+We operate on cached fixed windows of 300 s with 150 s stride (≈50% overlap). Each window carries engineered tabular features (flow/packet/port statistics, etc.). To avoid leakage, we fit a single z score scaler (StandardScaler) only on A train (per device chronological split) and apply it to A_val, A_test, B, and ToN_IoT. Missing engineered features are imputed with the A train mean after fitting the z scaler on A train (equivalently, we impute 0 in standardized space).
+3.4. Baseline Intrusion Detectors
+We train two parallel baselines on A train z features and both produce probability scores per window.
+	Logistic Regression (LR): \ell_2 regularized, class_weight=balanced, solver LBFGS. It provides a linear, interpretable baseline for tabular IDS data.
+	XGBoost (XGB) [21]: gradient boosted trees (e.g., n_estimators=200, max_depth=4, learning_rate=0.08, subsampling/column subsampling). It captures nonlinear interactions typical in network features.
+We first apply Platt scaling (sigmoid) [8], [10] on A val to correct gross miscalibration; for final reporting we also fit isotonic regression on A val only and transfer it unchanged to all splits [9]. Because isotonic is monotone, it preserves ranking/ROC [5], [25], [4].
+For each target FPR t\in{0.5,1,2}%, we compute a threshold \tau_ton the post isotonic scores as the (1-t) quantile of A val negatives:
+\tau_t={\operatorname{Quantile}\funcapply}_{\mathrm{\thinsp}1-t}(s_{\mathrm{A-val}}^-).\bigm
+We freeze {\tau_t}and transfer them unchanged to A_test, B, and ToN_IoT. We then report TPR@t with nonparametric bootstrap CIs (n=1000) [26], plus ROC AUC [2] and PR AUC [3]. Calibration is summarized by ECE using 15 equal mass (quantile) bins [4], [5].
+3.5. Robustness Probes Under Input Drift
+To quantify stability of calibration under covariate drift (distinct from the formal certificate below), we perturb standardized inputs along canonical directions and radii. Concretely, for a unit direction uand r\in[0,1](z units), we evaluate the detector on x_r=x+r\mathrm{\thinsp} uand track ECE vs. r. We consider (i) a reproducible random unit u, and (ii) detector aligned stress directions (sign flipped variants). Because isotonic is monotone, ROC/TPR at fixed FPR are unaffected; the probe isolates calibration sensitivity under drift [18].
+3.6. Lipschitz–Constrained Row Local Decoder (Certified Layer)
+Independently of the classifiers, we train a Lipschitz controlled decoder \Phi_\theta:\operatorname{R}^d\rightarrow(R,P)that maps each window’s z features to the parameters of a small MDP (S,A,\gamma)with \mid S\mid=8, \mid A\mid=3, \gamma=0.90[16], [17]. The outputs are:
+	R\in[0,1]S×A (bounded rewards)
+	P\in\operatorname{R}_+^{S\times A\times S} (row stochastic: \sum_{s^\prime}P(s,a,s^\prime)=1for all (s,a))
+The backbone is a sequence of linear layers with operator norms constrained to \le1(spectral normalization) and 1 Lipschitz GroupSort activations [12], [11], [13]. Two heads (reward, transition) are likewise constrained. We enforce \parallel W\parallel_{\mathrm{op}}\le1during training and “strict clamp” at verification time.
+Each transition row is projected onto the probability simplex using efficient algorithms [14], [15]. Training proceeds in two stages: (i) unmasked projection to learn coarse structure; (ii) masked projection with a fixed top k support per (s,a)(here k=4), selected by top k logits averaged on A train. An \varepsilon floor ensures exactly kpositive entries per row.
+The loss encourages (a) reward alignment with the window label, (b) diagonally dominant transitions (stability), and (c) small energy:
+\mathcal{L}\mathrm{\;\hairsp}=\mathrm{\;\hairsp}MSE(R, y)  +  λtrans(1-⟨P,I⟩)  +  λenergy(∥R∥22+∥P∥22).
+
+Optimization uses AdamW, and the decoder is not a classifier; it provides a certified representation.
+3.7. Value Functions and the Value–Stability Bound
+For each decoded (R,P)we compute the optimal value V^\star\in\operatorname{R}^Sby exact value iteration [16]:
+V^{(t+1)}(s)\mathrm{\;\hairsp}=\mathrm{\;\hairsp}{\max\funcapply}\below a(R(s,a)+\gamma\sum_{s^\prime}P(s,a,s^\prime)\mathrm{\thinsp} V^{(t)}(s^\prime)),\bigm
+until \parallel V^{(t+1)}-V^{(t)}\parallel_\infty<{10}^{-6}.
+Let L_Rand L_Pbe Lipschitz constants of x\mapstovec(R)and x\mapstovec(P)in \ell_2. We compute global constants by multiplying operator norms of all linear layers, and local median constants by estimating Jacobian spectral norms via power iteration on a validation batch (median across samples) [13].
+With K_R=\frac{1}{1-\gamma}and K_P=\frac{2\gamma}{(1-\gamma)^2}, and row local support of size k, any z space perturbation \parallel x^\prime-x\parallel_2\le ryields the value–stability certificate
+\begin{matrix}&\parallel V^\star(x^\prime)-V^\star(x)\parallel_\infty\mathrm{\;\hairsp} \le\mathrm{\;\hairsp} B(r),B(r)\mathrm{\;\hairsp} =\mathrm{\;\hairsp} (K_RL_R\mathrm{\;\hairsp} +\mathrm{\;\hairsp} K_P\mathrm{\thinsp} k\mathrm{\thinsp} L_P)\mathrm{\thinsp} r.&&\mathrm{(1)}\end{matrix}\bigm
+We evaluate both global and local median variants of L_R,L_Pin (1). Only the global (L_R,L_P)produce a formal, worst case certificate in (1). The local median (L_R^{\mathrm{med}},L_P^{\mathrm{med}})are tighter heuristics; we report empirical coverage explicitly to assess conservativeness.
+For tightness studies we approximate the top input singular direction of the concatenated map x\mapsto[K_R\mathrm{\thinsp}vec(R),\mathrm{\thinsp} K_Pk\mathrm{\thinsp}vec(P)]via Jacobian–vector power iteration and use it as uto form x_r=x+r\mathrm{\thinsp} u.
+For radii r\in{0.01,0.02,0.04,0.06,0.08,0.1,\ldots,1.0}we compute (i) coverage =\Pr\funcapply[\Delta V^\star(x;r)\le B(r)]with both bootstrap (n=1000) and exact Clopper–Pearson binomial CIs [26], [27], and (ii) tightness =median(\Delta V^\star/B(r))with IQR.
+3.8. Verification Artifacts
+We release: (i) per layer operator norms for the backbone and heads, demonstrating \parallel W\parallel_{\mathrm{op}}\le1(with final strict clamp); (ii) per row transition checks confirming stochasticity (\sum_{s^\prime}P(s,a,s^\prime)=1), exact support size kenforced by an \varepsilon floor, and negligible out of support mass; and (iii) the constants {L_R,L_P}(global and local median) used in (1). These artifacts ground the certificate plots and tables.
+3.9.  Statistical Procedures and Workflow Summary
+Uncertainty is summarized with nonparametric bootstrap CIs for TPR@FPR (n=1000) [26]. For paired comparisons at fixed FPR across test sets we use the Wilcoxon signed rank test with Holm–Bonferroni. The workflow is summarized in Table 1. 
+LR/XGB are the intrusion detectors, the Lipschitz decoder is a certified analysis layer that does not classify; it supplies the formal value–stability bound (1) and associated verification.
+4. RESULTS
+We report results on three held out test conditions: split A (“A_test”) and split B, both derived from IoT 23 with disjoint devices and disjoint malware families between A and B, and the external TON_IoT corpus for cross domain evaluation [6], [7]. Unless noted, we summarize (i) detection at very low false positive rates (FPR ∈ {0.5, 1, 2}%), (ii) ranking metrics (ROC AUC, PR AUC) [2], [3], (iii) probability calibration via Expected Calibration Error (ECE; 15 equal mass bins) [5], [4], (iv) robustness under controlled input drift of radius r ∈ [0, 1] in standardized (z) units, and (v) the tightness and coverage of our value stability certificates. Operating points (score thresholds) are chosen once from split A validation negatives and then transferred unchanged to all test sets (A_test, B, TON_IoT). Isotonic recalibration is monotone and thus preserves ROC/TPR while improving calibration [9], [10].
+4.1. Detection at Low FPR and Baseline Calibration
+Table 2 gives headline detection and calibration; ROC zooms appear in Figure 1. On split A, TPR@{0.5, 1, 2}% equals {1.000, 1.000, 1.000} with 95% bootstrap CIs [1.000, 1.000] at all points (AUC = 1.000, AUPRC = 1.000, ECE (Platt) = 0.051). On split B, TPR@{0.5, 1, 2}% is {0.572, 0.601, 0.633} with CIs [0.535, 0.591], [0.583, 0.618], [0.618, 0.657] (AUC = 0.953, AUPRC = 0.965, ECE (Platt) = 0.135). On TON_IoT, TPR@{0.5, 1, 2}% is {0.142, 0.196, 0.316} with CIs [0.124, 0.171], [0.183, 0.208], [0.293, 0.337] (AUC = 0.880, AUPRC = 0.602, ECE (Platt) = 0.103). Isotonic calibration improves ECE to 0.003/0.014/0.077 on A/B/TON without altering ROC/TPR (monotonicity). Because thresholds are transferred from A val, realized FPRs on B and TON_IoT may differ from the target 1%; we therefore do not report expected FP counts here. All CIs use n = 1000 non parametric bootstrap resamples [26]. Unless stated otherwise, metrics report the XGBoost detector; LR follows the same trends; omitted for space.
+The near perfect separation on split A likely reflects a favorable class/operating mix rather than leakage. The z scaler, thresholds, and calibrators are fit on A train/A val only, and devices/times are disjoint across A/B.
+4.2. Calibration After Isotonic Scaling
+Transferring the isotonic calibrator trained on A val yields large ECE reductions vs. Platt scaling on all domains: split A 0.051 → 0.003 (–94%), split B 0.135 → 0.014 (–90%), TON_IoT 0.103 → 0.077 (–25%). Because isotonic is monotone, ROC/TPR at fixed FPR are unchanged; reliability diagrams are shown in Figure 2 [9], [10], [5].
+4.3. Calibration Under Input Drift
+We perturb standardized inputs by radius r ∈ [0, 1] along three directions: a reproducible random unit vector and two detector aligned linear stresses (adv_linear+, adv_linear–). After isotonic scaling, split A remains essentially invariant (ECE ≈ 0.003 for all r). On split B, random drift is benign (ECE 0.014 → 0.010), adv_linear– is modest (ECE 0.014 → 0.021), and adv_linear+ steadily degrades calibration (ECE 0.014 → 0.155). On TON_IoT, adv_linear+ raises ECE from 0.077 to 0.168, while adv_linear– improves it to 0.032; random increases mildly to 0.102 (Figures 3–4).
+4.4. Tightness and Coverage of Value–Stability Certificates
+Figure 5 plots the ratio ΔV* / B(r) (empirical drop vs. certified budget). Across split A, split B, and TON_IoT, tightness is 10^2–10^3 below 1.0, confirming non vacuity; local median bounds are 10–100× tighter than global bounds while maintaining coverage near 1.0. Curves are flat in r, indicating approximately linear scaling of empirical drops with drift radius.
+4.5. Certificate Decomposition and Dominant Contributors
+With γ = 0.90 (K_R = 10, K_P = 180), support size k = 4, and |S| = 8, the certificate decomposes as:
+B_global(r) = (K_R L_R + K_P k L_P) r, B_local(r) = (K_R L_R^med + K_P k L_P^med) r.
+At r = 0.5, the transition term dominates in both regimes (e.g., local median B_R ≈ 0.3 vs. B_P ≈ 118.4; global B_R ≈ 5.0 vs. B_P ≈ 359.3), reflecting the role of k and L_P (Figures 6–7).
+4.6.  Effect of Drift Direction
+On split B, decoder-aligned (adversarial) directions produce the largest ΔV*, random isotropic directions the smallest, and PCA 1 intermediate; gaps widen with r (Figure 8). On TON_IoT, raw ΔV*(r) remains far below the theoretical ceiling (10 at γ = 0.90), and local median tightness/coverage remain conservative yet non-vacuous across r (Figure 9).
+4.7. Sensitivity Analyses
+Varying γ: As γ ↑, K_R and K_P increase, steepening both global and local lines; coverage at fixed r typically decreases (Figure 10).
+Varying support size k: The transition contribution scales linearly with k; we use k = 4 by default and report k ∈ {2, 4, 6} as a check (Figure 11).
+Varying |S|: Holding Lipschitz factors fixed, (K_R, K_P) are independent of |S|; bound slopes are invariant (Figure 12).
+
+4.8. Device Level Behavior
+Per device analysis shows most devices operate far from the bound (median tightness at r = 0.5 in the 10−4–10−3 range), with split A exhibiting near zero ECE, split B moderate dispersion, and TON_IoT a few high ECE outliers. Worst case device–split pairs at r = 1.0 remain < 10−2 (Figures 13–15).
+
+4.9. Ablations on Global Lipschitz Fctors
+We measure global L_R and L_P and recompute coverage curves; Table 3 reports constants and AUCC (area under the coverage curve across radii). Local median variants (not shown in the table) further tighten bounds without sacrificing coverage.
+4.10. Sensitivity to Window Overlap
+We reduce effective overlap via per device, time ordered Bernoulli sub sampling (keep_prob = 1 − overlap). On split B, detection is stable up to 25% reduction (TPR@1% ≈ 0.845–0.849, AUPRC ≈ 0.97); at 50%, the population shrinks and low FPR degrades (TPR@0.5% ↓ to 0.304; TPR@1% ↓ to 0.608). Certificate coverage at r = 0.7 remains near 1.0 (Figure 16).
+
+4.11. Projection/Decoder Ablations and Coverage
+Projection choices mainly affect conservativeness, not validity. Figure 17 summarizes: (A) certified r budgets, (B) tightness vs. r, and (C–D) coverage vs. r (with small r zoom). Local median projections consistently tighten bounds while keeping coverage ≈ 1.0 in the operational regime.
+
+
+4.12. Statistical Significance and Effect Sizes
+We compare TPR@τ_t (A val thresholds) using bootstrap CIs. Because A, B, and TON_IoT are disjoint test sets, rank tests assuming pairing are not strictly appropriate; we therefore treat them as descriptive only, and rely on bootstrap CIs for inference. Split A significantly exceeds split B at all three operating points (median ΔTPR = {+0.224, +0.209, +0.178}; all p_Holm < 10^−6), and both A and B significantly exceed TON_IoT (all p_Holm < 10^−6). Effect sizes confirm large gaps: Vargha–Delaney A_12 = 1.00 (Cliff’s δ = 1.00) throughout [30], [31] (Tables 4–5).
+
+4.13. Verification Artifacts
+Decoder verification confirms the assumptions used by the certificates: all linear layers are 1 Lipschitz (operator norms ≤ 1), transition rows are stochastic with exact fixed support size k = 4 (via ε floor), and out of support mass is negligible. Aggregated checks are provided in Tables 6–8.
+
+4.14. One Sentence Takeaway
+At FPR = {0.5, 1, 2}%, we achieve TPR = {0.572, 0.601, 0.633} on split B and {0.142, 0.196, 0.316} on TON_IoT (split A is near perfect at all three points); isotonic calibration markedly reduces ECE while preserving ROC/TPR, and our certified value–stability bounds are conservative but non vacuous, with empirical drops 10–100× below budget and coverage near 1.0 across radii.
+5. DISCUSSION
+5.1. Operating at Low FPR in Practice
+
+Security operations centers (SOCs) run detectors at very low false–positive rates (FPR) because attacks are rare and analyst attention is scarce [1]. Our protocol fixes thresholds on split A validation negatives and transfers them unchanged to all test sets, mirroring deployment rather than post–hoc tuning. At these frozen operating points, the detectors sustain strong true–positive rates (TPR) on split B—{0.572, 0.601, 0.633} at FPR = {0.5, 1, 2}%—but drop further on the cross–domain TON_IoT ({0.142, 0.196, 0.316}); split A is near–perfect and serves mainly as an internal check (Table 2, Fig. 1). Because thresholds are transferred from A‑val, realized FPRs on B and TON_IoT may deviate from the target 1%; we therefore do not report expected FP counts for those domains. Threshold transfer thus provides reproducibility and operational clarity, but it is intentionally harsher under shift, where fixed operating points expose real performance budgets rather than allowing retuning.
+
+5.2. Generalization and Domain Shift
+
+The A→B→TON_IoT gradient reflects increasing distributional mismatch: unseen devices and malware families by construction, different protocol/application mixes, and in TON_IoT, heterogeneous telemetry with some engineered features missing and imputed with zeros before the common z–scaler (Sec. III‑C). These factors can depress sensitivity in the extreme low–FPR region even when global ranking metrics remain high (e.g., B: ROC–AUC = 0.953, PR–AUC = 0.965). Our robustness probes help reconcile this: curves in Fig. 3 and Fig. 4 show that small but aligned drifts can shift score distributions just enough to cross fixed thresholds, reducing TPR@low–FPR while leaving ROC/PR largely intact [2], [3], [18]. In short, threshold transfer surfaces the sensitivity of the operating regime we actually care about.
+
+5.3. Calibration as a First–Class Objective
+
+Because isotonic regression is monotone, it preserves ROC curves and TPR at fixed FPR while correcting probability miscalibration [9], [10], [5]. Consistent with this, ECE drops from 0.051 → 0.003 (A), 0.135 → 0.014 (B), and 0.103 → 0.077 (TON_IoT) without altering the low–FPR operating characteristics (Table 2; reliability diagrams in Fig. 2). Under controlled drift, calibration behavior depends on direction: on B, random drift is benign (ECE 0.014 → 0.010), the adv_linear– direction is modest (to 0.021), while detector–aligned adv_linear+ steadily degrades calibration to ≈ 0.155 at r = 1 (Fig. 3, 4). On TON_IoT, adv_linear+ raises ECE from 0.077 to ≈ 0.168; adv_linear– improves it to ≈ 0.032; random increases mildly to ≈ 0.102. These patterns argue both for keeping calibration as a first–class metric and for monitoring it over time in deployment.
+
+
+5.4. Certification
+
+The Lipschitz–constrained, row–local decoder yields a value–stability certificate: for standardized perturbations of radius r, the change in optimal MDP value is bounded by B(r) (Eq. (1)). Operationally, this means small feature drifts cannot induce large swings in the decoded “behavior score,” providing analysts with a more stable summary than raw classifier scores. This guarantee is not a label–stability certificate and does not prevent class flips per se; it bounds how much the decoded dynamics can change. Empirically, bounds are conservative but non–vacuous: tightness ratios ΔV* / B(r) are 10^2–10^3× below 1 with coverage near 1.0 across radii and splits (Fig. 5). Local–median Lipschitz estimates tighten bounds by 10–100× over global ones while retaining coverage. Decomposition shows why: with γ = 0.90 (K_R = 10, K_P = 180) and support k = 4, the transition term dominates (e.g., at r = 0.5, local–median B_R ≈ 0.3 vs. B_P ≈ 118.4; global B_R ≈ 5.0 vs. B_P ≈ 359.3), and on TON_IoT the transition channel accounts for ≈ 99.8% of B(r) at r = 1.0 (Figs. 6, 7). Design implication: architectural or regularization effort spent on stabilizing the transition head (and managing its effective support k) buys the largest certificate gains [11], [12], [13], [14], [15].
+
+5.5. Sensitivity and Ablations (γ, k, |S|, Overlap)
+
+Sensitivity studies align with the theory. Increasing γ steepens the bound via K_R = 1 / (1 − γ) and K_P = 2γ / (1 − γ)^2; increasing support size k scales the transition contribution linearly (Figs. 10, 11). Holding Lipschitz factors fixed, changing the state count |S| leaves the slope invariant (Fig. 12). Reducing window overlap by per–device Bernoulli sub–sampling is tolerable up to ≈ 25% reduction (on B, TPR@1% stays ≈ 0.845–0.849), after which population shrinkage hurts low–FPR performance (at 50% reduction: TPR@0.5% = 0.304, TPR@1% = 0.608) while certificate coverage remains near unity (Fig. 16).
+
+5.6. Threats to Validity and Limitations
+
+Both IoT–23 and TON_IoT may contain labeling noise, coverage gaps, or temporal artifacts that affect generalization. Near–perfect separation on A likely reflects a favorable mix of devices and attacks, not leakage; scalers/calibrators were fit on A–train/A–val only, and devices/families are disjoint across splits (Sec. III‑B).
+We use flow–level tabular features; no payload analysis or binary scanning is performed. The guarantee is on the value stability of the decoded MDP, not on classification stability or adversarial robustness; tightness is dominated by the transition channel under typical settings. Even with isotonic, calibration degrades along detector–aligned directions on B and TON_IoT; monitoring and periodic recalibration may be required [18].
+
+
+6. CONCLUSION
+We set out from a practical constraint: intrusion detectors for IoT have to run at very low false–positive rates and still return calibrated probabilities that analysts can trust. To reflect that reality, we adopt a simple, deployment faithful protocol—choose operating thresholds once on split A validation negatives and transfer them unchanged to all test conditions—and pair strong but transparent detectors (logistic regression and XGBoost with post hoc calibration) with a Lipschitz constrained, row local decoder. The decoder maps each 300 s window to a compact MDP and provides a deterministic value–stability guarantee (see Eq. (1)), so small standardized drifts cannot cause large swings in the decoded behavior score. We evaluate on device  and family disjoint splits of IoT 23 and under domain shift on TON_IoT, using leak free preprocessing and explicit verification artifacts.
+Under fixed thresholds, the evidence is clear. On split B, TPR at FPR = {0.5, 1, 2}% is {0.572, 0.601, 0.633}; on TON_IoT it is {0.142, 0.196, 0.316}. Isotonic calibration, being monotone, preserves ROC/TPR while improving ECE to 0.003/0.014/0.077 on A/B/TON_IoT, respectively. Certificates are conservative but non vacuous: empirical value changes sit roughly 10–100× below the allotted budget with coverage ≈ 1.0 across radii, and decomposition shows the transition channel dominates the bound at γ = 0.90 with support k = 4.
+Our guarantee targets value stability of the decoded dynamics, not label stability, and cross domain generalization at low FPR remains challenging. That said, the approach is auditable and extensible: we release per layer operator norms, row stochasticity checks (with fixed support), measured Lipschitz constants (global and local median), and the frozen thresholds used for evaluation. These artifacts make it straightforward to reproduce results, to monitor calibration in the field, and to tighten bounds further—especially by focusing effort on stabilizing the transition head—while future work explores low FPR domain adaptation and online/conformal calibration under drift. As future work, two directions stand out. First, domain adaptation for low–FPR operation, including threshold selection and calibration transfer, could reduce the A→B→TON_IoT gap without post–hoc tuning. Second, online or conformal calibration under drift may keep probabilities reliable between retrains. On the certified layer, richer yet verifiable decoders (alternative Lipschitz controls, dynamic or learned k, structured sparsity) and joint training where detector and decoder co-regularize are promising. Finally, integrating protocol/context features while preserving the certificate is an open design problem.
+
+REFERENCES
+[1] S. Axelsson, “The base-rate fallacy and the difficulty of intrusion detection,” ACM Transactions on Information and System Security, vol. 3, no. 3, pp. 186–205, 2000.
+[2] T. Fawcett, “An introduction to ROC analysis,” Pattern Recognition Letters, vol. 27, no. 8, pp. 861–874, 2006.
+[3] J. Davis and M. Goadrich, “The relationship between precision–recall and ROC curves,” in Proc. 23rd Int. Conf. Machine Learning (ICML), 2006, pp. 233–240.
+[4] M. P. Naeini, G. F. Cooper, and M. Hauskrecht, “Obtaining well calibrated probabilities using Bayesian binning,” in Proc. 29th AAAI Conf. Artificial Intelligence (AAAI), vol. 1, 2015, pp. 2901–2907.
+[5] C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger, “On calibration of modern neural networks,” in Proc. 34th Int. Conf. Machine Learning (ICML), Proc. Machine Learning Research, vol. 70, 2017, pp. 1321–1330.
+[6] S. Garcia, A. Parmisano, and M. J. Erquiaga, “IoT‑23: A labeled dataset with malicious and benign IoT network traffic (version 1.0.0),” Zenodo, 2020.
+[7] T. M. Booij, I. Chiscop, E. Meeuwissen, N. Moustafa, and F. T. H. den Hartog, “ToN_IoT: The role of heterogeneity and the need for standardization of features and attack types in IoT network intrusion data sets,” IEEE Internet of Things Journal, vol. 9, no. 1, pp. 485–496, 2022.
+[8] J. Platt, “Probabilistic outputs for support vector machines and comparisons to regularized likelihood methods,” in Advances in Large Margin Classifiers. Cambridge, MA: MIT Press, 1999, pp. 61–74.
+[9] B. Zadrozny and C. Elkan, “Transforming classifier scores into accurate multiclass probability estimates,” in Proc. 8th ACM SIGKDD Int. Conf. Knowledge Discovery and Data Mining (KDD), 2002, pp. 694–699.
+[10] A. Niculescu‑Mizil and R. Caruana, “Predicting good probabilities with supervised learning,” in Proc. 22nd Int. Conf. Machine Learning (ICML), 2005, pp. 625–632.
+[11] C. Anil, J. Lucas, and R. Grosse, “Sorting out Lipschitz function approximation,” in Proc. 36th Int. Conf. Machine Learning (ICML), Proc. Machine Learning Research, vol. 97, 2019, pp. 291–301.
+[12] T. Miyato, T. Kataoka, M. Koyama, and Y. Yoshida, “Spectral normalization for generative adversarial networks,” in Proc. Int. Conf. Learning Representations (ICLR), 2018.
+[13] H. Gouk, E. Frank, B. Pfahringer, and M. J. Cree, “Regularisation of neural networks by enforcing Lipschitz continuity,” Machine Learning, vol. 110, no. 2, pp. 393–416, 2021.
+[14] W. Wang and M. A. Carreira‑Perpiñán, “Projection onto the probability simplex: An efficient algorithm with a simple proof,” arXiv preprint arXiv:1309.1541, 2013.
+[15] L. Condat, “Fast projection onto the simplex and the ℓ1 ball,” Mathematical Programming, vol. 158, no. 1, pp. 575–585, 2016.
+[16] M. L. Puterman, Markov Decision Processes: Discrete Stochastic Dynamic Programming. New York, NY: John Wiley & Sons, 1994.
+[17] D. P. Bertsekas, Dynamic Programming and Optimal Control. Belmont, MA: Athena Scientific, 1995.
+[18] Y. Ovadia et al., “Can you trust your model’s uncertainty? Evaluating predictive uncertainty under dataset shift,” in Advances in Neural Information Processing Systems 32 (NeurIPS), 2019, pp. 13991–14002.
+[19] M. Ring, S. Wunderlich, D. Scheuring, D. Landes, and A. Hotho, “A survey of network‑based intrusion detection data sets,” Computers & Security, vol. 86, pp. 147–167, 2019.
+[20] J. Nixon, M. W. Dusenberry, L. Zhang, G. Jerfel, and D. Tran, “Measuring calibration in deep learning,” in Proc. IEEE Conf. Computer Vision and Pattern Recognition Workshops (CVPRW), 2019, pp. 38–46.
+[21] T. Chen and C. Guestrin, “XGBoost: A scalable tree boosting system,” in Proc. 22nd ACM SIGKDD Int. Conf. Knowledge Discovery and Data Mining (KDD), 2016, pp. 785–794.
+[22] E. Wong and J. Z. Kolter, “Provable defenses against adversarial examples via the convex outer adversarial polytope,” in Proc. 35th Int. Conf. Machine Learning (ICML), Proc. Machine Learning Research, vol. 80, 2018, pp. 5286–5295.
+[23] A. Raghunathan, J. Steinhardt, and P. Liang, “Semidefinite relaxations for certifying robustness to adversarial examples,” in Advances in Neural Information Processing Systems 31 (NeurIPS), 2018, pp. 10900–10910.
+[24] J. M. Cohen, E. Rosenfeld, and J. Z. Kolter, “Certified adversarial robustness via randomized smoothing,” in Proc. 36th Int. Conf. Machine Learning (ICML), Proc. Machine Learning Research, vol. 97, 2019, pp. 1310–1320.
+[25] V. Kuleshov, N. Fenner, and S. Ermon, “Accurate uncertainties for deep learning using calibrated regression,” in Proc. 35th Int. Conf. Machine Learning (ICML), Proc. Machine Learning Research, vol. 80, 2018, pp. 2796–2804.
+[26] B. Efron, “Bootstrap methods: Another look at the jackknife,” Annals of Statistics, vol. 7, no. 1, pp. 1–26, 1979.
+[27] C. J. Clopper and E. S. Pearson, “The use of confidence or fiducial limits illustrated in the case of the binomial,” Biometrika, vol. 26, no. 4, pp. 404–413, 1934.
+[28] F. Wilcoxon, “Individual comparisons by ranking methods,” Biometrics Bulletin, vol. 1, no. 6, pp. 80–83, 1945.
+[29] S. Holm, “A simple sequentially rejective multiple test procedure,” Scandinavian Journal of Statistics, vol. 6, no. 2, pp. 65–70, 1979.
+[30] A. Vargha and H. D. Delaney, “A critique and improvement of the CL common language effect size statistics of McGraw and Wong,” Journal of Educational and Behavioral Statistics, vol. 25, no. 2, pp. 101–132, 2000.
+[31] N. Cliff, Ordinal Methods for Behavioral Data Analysis. Mahwah, NJ: Lawrence Erlbaum Associates, 1996.
+
+ 
+TABLES
+
+Table 1: Workflow Summary
+Data and Splits	Cached 300 s/150 s windows → IoT 23 A/B (device & family disjoint) + ToN_IoT external.
+Train (detectors)	Fit z scaler on A train; train LR and XGB on A train; Platt on A val; isotonic on A val; transfer unchanged to A_test, B, and ToN_IoT.
+Fix thresholds	Choose {\tau_{0.5%,1%,2%}}on A val negatives; freeze & transfer.
+Test (detectors)	Apply {\tau_t}to A_test, B, ToN_IoT; report TPR@FPR, ROC AUC, PR AUC, ECE.
+Train (decoder)	Two stage training with spectral control and row local top k simplex projection; verify norms/support.
+Certification	Compute L_R,L_P(global/local median); evaluate B(r), worst case \Delta V^\star, coverage, tightness with CIs.
+Probes	Drift ECE vs. ralong random and detector aligned directions (calibration stability).
+
+
+Table 2: Low–FPR detection and calibration (test sets). Thresholds are fixed at FPR = {0.5, 1, 2}% using split A validation negatives and then transferred to A_test, B, and TON_IoT. TPR columns show point estimates with 95% bootstrap CIs; N_neg is the number of test negatives
+	N_neg	TPR@0.5%	TPR@1%	TPR@2%	AUC	AUPRC	ECE (Platt)	ECE (Iso)
+split A	4,696	1.000 [1.000, 1.000]	1.000 [1.000, 1.000]	1.000 [1.000, 1.000]	1.000	1.000	0.051	0.003
+split B	4,696	0.572 [0.535, 0.591]	0.601 [0.583, 0.618]	0.633 [0.618, 0.657]	0.953	0.965	0.135	0.014
+TON_IoT	26,452	0.142 [0.124, 0.171]	0.196 [0.183, 0.208]	0.316 [0.293, 0.337]	0.880	0.602	0.103	0.077
+
+Table 3: Ablation on global Lipschitz factors. We report measured global L_R, L_P, and AUCC.
+Model	L_R	L_P	AUCC	n_r
+NRL (ours)	0.998	0.99801	0.99	15
+Measured values of global Lipschitz constants (L_R, L_P) and area under coverage curve (AUCC).
+
+Table 4: Wilcoxon signed rank with Holm correction (paired bootstrap on TPR at fixed FPR). Δ is median difference (A − B).
+Pair	FPR (%)	TPR_A	TPR_B	Δ	p_Holm
+splitA vs splitB	0.5	0.996	0.771	0.224	<1e-6
+splitA vs splitB	1.0	0.996	0.787	0.209	<1e-6
+splitA vs splitB	2.0	0.996	0.817	0.178	<1e-6
+splitA vs TON_IoT	0.5	0.996	0.100	0.896	<1e-6
+splitA vs TON_IoT	1.0	0.996	0.182	0.813	<1e-6
+splitA vs TON_IoT	2.0	0.996	0.347	0.648	<1e-6
+splitB vs TON_IoT	0.5	0.771	0.100	0.671	<1e-6
+splitB vs TON_IoT	1.0	0.787	0.182	0.604	<1e-6
+splitB vs TON_IoT	2.0	0.817	0.347	0.469	<1e-6
+
+Table 5: Effect sizes for TPR at fixed FPR (bootstrap n = 3000). Vargha–Delaney A_12 is the probability that A exceeds B; Cliff’s δ = 2A_12 − 1.
+Pair	FPR (%)	TPR_A (med)	TPR_B (med)	Δ (med)	Δ CI_95 lo	A₁₂	δ
+splitA vs splitB	0.5	0.996	0.772	0.224	0.195	1.00	1.00
+splitA vs splitB	1.0	0.996	0.788	0.208	0.182	1.00	1.00
+splitA vs splitB	2.0	0.996	0.818	0.178	0.152	1.00	1.00
+splitA vs TON_IoT	0.5	0.996	0.100	0.895	0.866	1.00	1.00
+splitA vs TON_IoT	1.0	0.996	0.183	0.813	0.774	1.00	1.00
+splitA vs TON_IoT	2.0	0.996	0.347	0.648	0.579	1.00	1.00
+splitB vs TON_IoT	0.5	0.771	0.100	0.671	0.629	1.00	1.00
+splitB vs TON_IoT	1.0	0.786	0.183	0.603	0.557	1.00	1.00
+splitB vs TON_IoT	2.0	0.818	0.347	0.469	0.398	1.00	1.00
+
+Table 6: Decoder layer operator norms (power iteration) and pass/fail vs. 1.0 (linear layers).
+Layer	Part	Type	In	Out	Op. norm	≤ 1?
+backbone.lin0	backbone	linear	43	128	0.999989	Yes
+backbone.lin1	backbone	linear	128	128	1.000000	Yes
+backbone.lin2	backbone	linear	128	128	1.000000	Yes
+head_R	reward_head	linear	128	24	0.999997	Yes
+head_P	transition_head	linear	128	192	1.000000	Yes
+
+Table 7: Aggregate verification summary (global constants, reward range, row sum tightness, and min entry on fixed support).
+S	A	k	global L_R	global L_P	reward min	reward max	min entry (support)
+8	3	4	0.999987	0.999990	0.0	1.0	1.0×10⁻⁶
+
+Table 8: Transition row checks (fixed support, k = 4).
+Check	Result	Range / Bound	Pass?
+Support size	k exactly	k_min = 4, k_max = 4	✓
+Row sums	≈ 1	[0.999999, 1.000001]	✓
+Min entry on support	≥ ε	ε = 10⁻⁶	✓
+Max mass off support	≤ 10⁻¹²	< 10⁻¹²	✓
+
+ 
+FIGURE LEGENDS
+Figure 1: ROC zooms in the operational low-FPR regime (test sets). From left to right: split A, split B, and TON_IoT. Axes limited to FPR ≤ 2.5%; panel annotations match Table I.
+Figure 2: Reliability diagrams after isotonic calibration (15 equal-mass bins; dashed line: perfect calibration).
+Figure 3: ECE vs. radius r under random and detector aligned drifts for each split.
+Figure 4: Reliability curves (split B, adv_linear+) at r ∈ {0, 0.5, 1.0} (15 equal mass bins).
+Figure 5: Tightness relative to certified bounds. One panel per split (A, B, TON_IoT). y axis: ΔV*/B(r) (log). Medians with IQR; dashed line at 1.0. Local median bounds tighten markedly while retaining near unity coverage.
+Figure 6: Reward vs. transition contributions at r = 0.5 (local median vs. global).
+Figure 7: Certificate decomposition on TON_IoT across radii. At γ = 0.90 and k = 4, the transition channel accounts for ≈ 99.8% of B(r) at r = 1.0.
+Figure 8: Direction of drift matters (split B). Median ΔV* with IQRs vs. r for adversarial, random, and PCA 1 directions.
+Figure 9: TON_IoT under drift. (A) Raw ΔV* vs. r (ceiling = 10 at γ = 0.90). (B) Tightness ΔV*/B_local(r) (log y) with coverage overlaid; ratios ≪ 1 and coverage ≈ 1.0 across r.
+Figure 10: Sensitivity to γ (slopes scale with K_R, K_P).
+Figure 11: Sensitivity to support size k (transition term scales with k).
+Figure 12: Sensitivity to state count |S| (slopes invariant given fixed Lipschitz factors).
+Figure 13: Per device tightness (median ΔV*/B(r) at r = 0.5) vs. ECE; marker size ∝ #samples.
+Figure 14: Worst 15 device–split pairs by tightness at r = 1.0 (all < 10^−2).
+Figure 15: Per device ECE vs. certificate coverage at r = 0.5 (coverage ≈ 1.0 broadly).
+Figure 16: Overlap sensitivity (split B). Solid: TPR@0.5%, TPR@1%, AUPRC vs. pseudo overlap (0, 10, 25, 50%). Gray bars: resulting #test windows.
+Figure 17: Projection/decoder ablations. (A) Certified r budgets across projection/decoder variants. (B) Tightness ΔV*/B(r) vs. r (local median ≪ global). (C) Coverage vs. r (near unity across the operational range). (D) Zoom into small r (differences appear only at extreme radii).
+

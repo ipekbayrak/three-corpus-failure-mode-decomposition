@@ -1,0 +1,29 @@
+inherits: base.yaml
+
+pilot:
+  models:
+    - logistic_regression
+    - hist_gradient_boosting
+  split_row_caps:
+    train: 100000
+    val: 25000
+    test: 25000
+  transfer_directions:
+    - [iot23, ton_iot]
+    - [ton_iot, iot23]
+  threshold_fpr: 0.01
+  controlled_shift:
+    enabled: true
+    source_dataset: iot23
+    excluded_train_groups: [reconnaissance, command_control]
+    seen_groups: [service_disruption]
+    novel_groups: [reconnaissance, command_control]
+    novelty_schedule: [0.0, 0.25, 0.5, 0.75, 1.0]
+  alpha_hat:
+    k_nn: 10
+    distance_quantile: 0.95
+  outputs:
+    results_csv: artifacts/pilot/pilot_results.csv
+    settings_csv: artifacts/pilot/pilot_settings.csv
+    checkpoint_csv: artifacts/pilot/pilot_checkpoint.csv
+    hero_png: artifacts/pilot/pilot_hero.png

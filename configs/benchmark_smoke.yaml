@@ -1,0 +1,15 @@
+inherits: benchmark.yaml
+
+benchmark:
+  split_row_caps:
+    train: 20000
+    val: 5000
+    test: 5000
+  bootstrap:
+    n_boot: 100
+    seed: 20260414
+  outputs:
+    predictions_csv: artifacts/benchmark_smoke/predictions.csv
+    settings_csv: artifacts/benchmark_smoke/settings.csv
+    within_domain_summary_csv: artifacts/benchmark_smoke/within_domain_summary.csv
+    cross_domain_summary_csv: artifacts/benchmark_smoke/cross_domain_summary.csv

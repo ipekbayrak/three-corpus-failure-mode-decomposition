@@ -1,0 +1,17 @@
+feature_name,definition,derived_from
+log_duration_s,"log1p(max(duration_s, 0))",duration_s
+log_src_bytes,"log1p(max(src_bytes, 0))",src_bytes
+log_dst_bytes,"log1p(max(dst_bytes, 0))",dst_bytes
+log_src_pkts,"log1p(max(src_pkts, 0))",src_pkts
+log_dst_pkts,"log1p(max(dst_pkts, 0))",dst_pkts
+log_total_bytes,log1p(src_bytes + dst_bytes),"src_bytes, dst_bytes"
+log_total_pkts,log1p(src_pkts + dst_pkts),"src_pkts, dst_pkts"
+log_bytes_per_s,log1p((src_bytes + dst_bytes) / duration_s); 0 when duration_s = 0,"duration_s, src_bytes, dst_bytes"
+log_pkts_per_s,log1p((src_pkts + dst_pkts) / duration_s); 0 when duration_s = 0,"duration_s, src_pkts, dst_pkts"
+src_byte_frac,src_bytes / (src_bytes + dst_bytes); 0.5 when total_bytes = 0,"src_bytes, dst_bytes"
+src_pkt_frac,src_pkts / (src_pkts + dst_pkts); 0.5 when total_pkts = 0,"src_pkts, dst_pkts"
+bytes_per_pkt,(src_bytes + dst_bytes) / (src_pkts + dst_pkts); 0 when total_pkts = 0,"src_bytes, dst_bytes, src_pkts, dst_pkts"
+proto_tcp,1[proto_norm = tcp],proto
+proto_udp,1[proto_norm = udp],proto
+proto_icmp,1[proto_norm = icmp],proto
+proto_other,1[proto_norm = other],proto

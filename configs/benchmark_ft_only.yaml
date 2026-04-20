@@ -1,0 +1,10 @@
+inherits: benchmark.yaml
+
+benchmark:
+  models:
+    - ft_transformer
+  outputs:
+    predictions_csv: artifacts/benchmark_ft/predictions.csv
+    settings_csv: artifacts/benchmark_ft/settings.csv
+    within_domain_summary_csv: artifacts/benchmark_ft/within_domain_summary.csv
+    cross_domain_summary_csv: artifacts/benchmark_ft/cross_domain_summary.csv

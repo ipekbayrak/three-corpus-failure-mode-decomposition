@@ -1,0 +1,25 @@
+dataset,raw_label,mapped_group,mapping_source,mapping_confidence,notes
+iot23,ddos,service_disruption,pilot_coarse_manual,0.95,clear service disruption family
+iot23,partofahorizontalportscan,reconnaissance,pilot_coarse_manual,0.95,scan activity
+iot23,partofahorizontalportscan-attack,reconnaissance,pilot_coarse_manual,0.90,scan-derived attack variant
+iot23,c&c-partofahorizontalportscan,reconnaissance,pilot_coarse_manual,0.85,scan component within C2 trace
+iot23,c&c,command_control,pilot_coarse_manual,0.95,clear command-and-control label
+iot23,c&c-heartbeat,command_control,pilot_coarse_manual,0.95,heartbeat traffic as C2
+iot23,c&c-heartbeat-attack,command_control,pilot_coarse_manual,0.90,attack-tagged heartbeat C2 traffic
+iot23,c&c-heartbeat-filedownload,command_control,pilot_coarse_manual,0.80,mixed label retained under C2 for pilot
+iot23,c&c-filedownload,command_control,pilot_coarse_manual,0.80,mixed label retained under C2 for pilot
+iot23,c&c-torii,command_control,pilot_coarse_manual,0.85,torii C2 variant
+iot23,attack,other,pilot_coarse_manual,0.40,too generic for coarse pilot ontology
+iot23,okiru,other,pilot_coarse_manual,0.40,kept ambiguous in pilot
+iot23,okiru-attack,other,pilot_coarse_manual,0.40,kept ambiguous in pilot
+iot23,filedownload,other,pilot_coarse_manual,0.40,ambiguous stand-alone behavior
+iot23,c&c-mirai,other,pilot_coarse_manual,0.40,ambiguous mixed malware family label
+ton_iot,ddos,service_disruption,pilot_coarse_manual,0.95,clear service disruption family
+ton_iot,dos,service_disruption,pilot_coarse_manual,0.95,clear service disruption family
+ton_iot,scanning,reconnaissance,pilot_coarse_manual,0.95,clear reconnaissance family
+ton_iot,backdoor,command_control,pilot_coarse_manual,0.90,used as C2-like persistence proxy in pilot
+ton_iot,password,web_credential_intrusion,pilot_coarse_manual,0.95,credential attack family
+ton_iot,injection,web_credential_intrusion,pilot_coarse_manual,0.90,input or web attack grouped coarsely
+ton_iot,xss,web_credential_intrusion,pilot_coarse_manual,0.90,input or web attack grouped coarsely
+ton_iot,mitm,other,pilot_coarse_manual,0.40,kept ambiguous in pilot
+ton_iot,ransomware,other,pilot_coarse_manual,0.40,out of pilot coarse ontology

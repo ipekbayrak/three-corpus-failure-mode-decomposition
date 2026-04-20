@@ -1,0 +1,28 @@
+.DS_Store
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Local coverage / tooling noise
+.coverage
+htmlcov/
+
+# LaTeX build intermediates
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+missfont.log
+
+# Manuscript PDFs are generated outputs; keep source figures and tables tracked
+paper/manuscript.pdf
+paper/acsac/manuscript.pdf

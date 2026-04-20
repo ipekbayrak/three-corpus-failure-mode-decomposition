@@ -1,0 +1,69 @@
+project:
+  name: iot_ids_transfer
+  feature_schema_version: feature_schema_v1
+  seed: 20260413
+
+paths:
+  raw_root: artifacts/raw
+  processed_root: artifacts/processed/feature_schema_v1
+  manifests_root: artifacts/manifests
+  figures_root: artifacts/figures
+  tables_root: artifacts/tables
+  claims_root: artifacts/claims
+
+datasets:
+  iot23:
+    version: unset
+    raw_csv: artifacts/raw/iot23/staged.csv
+    loader: staged_csv
+    column_map:
+      record_id: record_id
+      group_id: group_id
+      label: label
+      family_raw: family_raw
+      proto: proto
+      duration_s: duration_s
+      src_bytes: src_bytes
+      dst_bytes: dst_bytes
+      src_pkts: src_pkts
+      dst_pkts: dst_pkts
+  ton_iot:
+    version: unset
+    raw_csv: artifacts/raw/ton_iot/staged.csv
+    loader: staged_csv
+    column_map:
+      record_id: record_id
+      group_id: group_id
+      label: label
+      family_raw: family_raw
+      proto: proto
+      duration_s: duration_s
+      src_bytes: src_bytes
+      dst_bytes: dst_bytes
+      src_pkts: src_pkts
+      dst_pkts: dst_pkts
+  unsw_nb15:
+    version: unset
+    raw_csv: artifacts/raw/unsw_nb15/staged.csv
+    loader: staged_csv
+    column_map:
+      record_id: record_id
+      group_id: group_id
+      label: label
+      family_raw: family_raw
+      proto: proto
+      duration_s: duration_s
+      src_bytes: src_bytes
+      dst_bytes: dst_bytes
+      src_pkts: src_pkts
+      dst_pkts: dst_pkts
+
+split:
+  train_frac: 0.6
+  val_frac: 0.2
+  test_frac: 0.2
+  group_key: group_id
+
+ontology:
+  mapping_csv: artifacts/manifests/ontology_mapping.csv
+  default_group: other
