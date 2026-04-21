@@ -9,7 +9,7 @@ class JournalManuscriptTextTest(unittest.TestCase):
         manuscript = Path("paper/manuscript.tex").read_text(encoding="utf-8")
 
         self.assertIn(
-            "\\title{A Three-Corpus Failure-Mode Decomposition of Fixed-Threshold Transfer in Tabular Flow-Level NIDS}",
+            "\\title{Decomposing Fixed-Threshold Transfer in Tabular Flow-Level NIDS}",
             manuscript,
         )
         self.assertNotIn(
