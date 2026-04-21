@@ -26,3 +26,13 @@ missfont.log
 # Manuscript PDFs are generated outputs; keep source figures and tables tracked
 paper/manuscript.pdf
 paper/acsac/manuscript.pdf
+
+# Oversized generated artifacts are kept local and regenerated as needed
+artifacts/aux_native/staged/iot23_native_features.csv
+artifacts/benchmark/predictions.csv
+artifacts/benchmark_ft/predictions.csv
+artifacts/benchmark_smoke/predictions.csv
+artifacts/manifests/feature_manifest.csv
+artifacts/manifests/split_manifest.csv
+artifacts/processed/feature_schema_v1/iot23_feature_schema_v1.csv
+artifacts/raw/iot23/staged.csv
