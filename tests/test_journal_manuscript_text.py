@@ -9,7 +9,7 @@ class JournalManuscriptTextTest(unittest.TestCase):
         manuscript = Path("paper/manuscript.tex").read_text(encoding="utf-8")
 
         self.assertIn(
-            "\\title{Decomposing Fixed-Threshold Transfer in Tabular Flow-Level NIDS}",
+            "\\title{A Three-Corpus Failure-Mode Decomposition of Fixed-Threshold Transfer in Tabular Flow-Level NIDS}",
             manuscript,
         )
         self.assertNotIn(
@@ -44,7 +44,7 @@ class JournalManuscriptTextTest(unittest.TestCase):
             manuscript,
         )
         self.assertIn(
-            "The benchmark-wide count is driven by the \\CompetentUnswStressTestSettingCount{} UNSW-related stress-test directions; the \\CompetentIotOnlySettingCount{} IoT-only competent transfers split \\CompetentIotOnlyRankingFailureCount{} failures and \\CompetentIotOnlyNonCollapsedCount{} rows above the 0.60 failure floor.",
+            "The benchmark-wide count is driven by the \\CompetentUnswStressTestSettingCount{} UNSW-related stress-test transfers; the \\CompetentIotOnlySettingCount{} IoT-only competent transfers split \\CompetentIotOnlyRankingFailureCount{} failures and \\CompetentIotOnlyNonCollapsedCount{} rows above the 0.60 failure floor.",
             manuscript,
         )
         self.assertIn("No setting in this benchmark lies exactly at the AUROC~=~0.50 boundary.", manuscript)

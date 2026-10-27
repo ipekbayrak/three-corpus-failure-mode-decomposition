@@ -116,8 +116,8 @@ class SchemaAppendixTest(unittest.TestCase):
             ]
             self.assertNotIn(r"\resizebox", acsac_feature_tex)
             self.assertIn(r"Formula", acsac_feature_tex)
-            self.assertEqual(acsac_feature_tex.count(r"\begin{table}"), 1)
-            self.assertNotIn(r"\begin{table*}", acsac_feature_tex)
+            self.assertEqual(acsac_feature_tex.count(r"\begin{table*}"), 1)
+            self.assertNotIn(r"\begin{table}", acsac_feature_tex)
             self.assertNotIn(r"\label{tab:shared-feature-schema-protocol}", acsac_feature_tex)
             self.assertNotIn(r"proto\_tcp", normalized_feature_tex)
             for row in quantitative_rows:

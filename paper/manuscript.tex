@@ -18,13 +18,17 @@
 
 \begin{frontmatter}
 
-\title{Decomposing Fixed-Threshold Transfer in Tabular Flow-Level NIDS}
+\title{A Three-Corpus Failure-Mode Decomposition of Fixed-Threshold Transfer in Tabular Flow-Level NIDS}
 
-\author{Mustafa Ipekbayrak}
-\author{G{\"u}ls{\"u}m Zeynep G{\"u}rka\c{s}-Ayd{\i}n}
+\author[aff1]{Mustafa Ipekbayrak\corref{cor1}}
+\author[aff1]{G{\"u}ls{\"u}m Zeynep G{\"u}rka\c{s}-Ayd{\i}n}
+\cortext[cor1]{Corresponding author}
+\affiliation[aff1]{organization={Institute of Graduate Studies, Istanbul University-Cerrahpa\c{s}a},
+                   city={Istanbul},
+                   country={T\"urkiye}}
 
 \begin{abstract}
-Cross-dataset evaluations of network intrusion detection systems (NIDS) routinely show degradation under domain shift, but they seldom distinguish threshold miscalibration from loss of ranking quality. We study this distinction in a three-corpus benchmark of fixed-threshold transfer for tabular flow-level NIDS using IoT-23, ToN-IoT, and UNSW-NB15. All corpora are mapped to a shared 16-feature flow schema, \ModelCount{} tabular classifiers are trained, and thresholds selected on source validation at \FrozenFprTarget{} false positive rate are transferred unchanged. Of \NaturalSettingCount{} transfer settings, \CompetentSettingCount{} pass a predeclared source-competence filter. Among these \CompetentSettingCount{} competent settings, \CompetentRankingFailureCount{} fall below target AUROC 0.60, and \CompetentInversionCount{} of those failures are below chance on point estimates under the transferred score orientation. The benchmark-wide count is driven by the \CompetentUnswStressTestSettingCount{} UNSW-related stress-test directions; the \CompetentIotOnlySettingCount{} IoT-only competent transfers split \CompetentIotOnlyRankingFailureCount{} failures and \CompetentIotOnlyNonCollapsedCount{} rows above the 0.60 failure floor. Low-FPR ranking is near chance benchmark-wide: target standardized pAUC@1\% ranges from \CompetentTargetPaucMin{} to \CompetentTargetPaucMax{} (median \CompetentTargetPaucMedian{}), compared with a source-holdout median of \CompetentSourcePaucMedian{}. Benign-only threshold reselection does not rescue detection (mean recalibrated TPR 0.013 across all \NaturalSettingCount{} settings), and neither a 0.5\%/1\%/5\% source-side budget sweep nor an auxiliary CORAL comparison changes the deployment conclusion at the chosen budget. In this three-corpus benchmark, cross-dataset degradation is therefore dominated by ranking failure rather than threshold drift. Secondary analyses of attack novelty, benign covariate shift, and target-free monitors remain limited, and none of the audited monitors is reliable enough for deployment.
+Cross-dataset evaluations of network intrusion detection systems (NIDS) routinely show degradation under domain shift, but they seldom distinguish threshold miscalibration from loss of ranking quality. When a detector trained on one network is deployed on another at a fixed false-positive budget, three operationally different failures can occur under the transferred score rule: the ranking can remain usable with the threshold in the wrong region (threshold drift), benign and attack scores can overlap so that no threshold recovers detection (ranking collapse), or the score direction can invert so that target attacks score below target benign traffic (orientation inversion). We benchmark this distinction across IoT-23, ToN-IoT, and UNSW-NB15 using a shared 16-feature flow schema and \ModelCount{} tabular classifiers; source thresholds set on validation at \FrozenFprTarget{} FPR are transferred unchanged. Of \NaturalSettingCount{} transfer settings, \CompetentSettingCount{} pass a predeclared source-competence filter; within those, \CompetentRankingFailureCount{} fall below target AUROC 0.60 and \CompetentInversionCount{} of those failures are below chance on point estimates under the transferred score orientation. The benchmark-wide count is driven by the \CompetentUnswStressTestSettingCount{} UNSW-related stress-test transfers; the \CompetentIotOnlySettingCount{} IoT-only competent transfers split \CompetentIotOnlyRankingFailureCount{} failures and \CompetentIotOnlyNonCollapsedCount{} rows above the 0.60 failure floor. Low-FPR ranking stays near chance benchmark-wide (target standardized pAUC@1\% median \CompetentTargetPaucMedian{} versus source-holdout \CompetentSourcePaucMedian{}). Benign-only threshold reselection does not rescue detection (mean recalibrated TPR 0.013 across all \NaturalSettingCount{} settings), and neither a 0.5\%/1\%/5\% source-side budget sweep nor an auxiliary CORAL comparison improves the operational conclusion at the deployment budget. In this three-corpus benchmark, cross-dataset degradation is therefore dominated by ranking failure rather than threshold drift; secondary analyses of attack novelty, benign covariate shift, and target-free monitors remain limited, and none of the audited monitors is reliable enough for deployment.
 \end{abstract}
 
 \begin{keyword}
@@ -35,9 +39,16 @@ IoT intrusion detection \sep domain shift \sep cross-dataset evaluation \sep fal
 
 \section{Introduction}
 
-The instability of operating points across network domains has been a foundational concern in security machine learning since Axelsson~\cite{axelsson2000baserate} quantified the base-rate fallacy and Sommer and Paxson~\cite{sommer2010outside} argued that closed-world evaluations systematically overstate classifier utility. What remains missing is a direct operational decomposition: when a threshold trained in one network is deployed unchanged in another, what fails, and which component of the shift drives it?
+A network intrusion detection model trained on one network's traffic can lose most of its alerting value when deployed on another network. Since Axelsson's base-rate fallacy~\cite{axelsson2000baserate} and Sommer and Paxson's critique of closed-world evaluation~\cite{sommer2010outside}, the fact of cross-dataset degradation has been well established in security machine learning; what remains underserved is its operational anatomy. When a source-calibrated threshold is applied unchanged on a new network, how does detection fail at the deployment budget, which component of the shift drives that failure, and can a small unlabeled target sample repair it?
 
 Prior cross-dataset evaluations have shown that IDS models lose generalization strength under domain change~\cite{dhooge2020inter,layeghy2024benchmarking,iwanowski2025choice}. These studies document the existence of degradation without decomposing it. In particular, they do not distinguish between two operationally different failure modes: \emph{ranking failure}, in which the transferred score direction no longer yields enough target discrimination for operational repair, and \emph{threshold drift}, in which the model's ranking is preserved but the source-calibrated operating point falls in the wrong region of the target's score distribution. In the taxonomy used here, ranking failure is later split into ranking collapse (AUROC~$\leq$~0.50) and ranking degradation (0.50~$<$~AUROC~$<$~0.60); below-chance rows are the inverted-orientation subset of collapse. The distinction matters because ranking failure is not fixed by simple threshold movement, while threshold drift can in principle be repaired by recalibration on unlabeled target data.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/failure_mode_schematic.pdf}
+\caption{Schematic of the three failure modes for fixed-threshold transfer under the transferred score rule. (a) Threshold drift: benign and attack scores remain separable on target, but the frozen source-side cutoff lands in the wrong region, so the operating point can in principle be repaired by threshold reselection. (b) Ranking collapse: benign and attack score distributions overlap on target, so no cutoff on this score recovers useful detection. (c) Orientation inversion: target attack scores fall below target benign scores, a distinct subtype of collapse in which the transferred score direction is reversed and cannot be fixed without target-label access or an external re-orientation signal. The figure is illustrative rather than data-driven.}
+\label{fig:failure-modes}
+\end{figure}
 
 This paper addresses the decomposition gap in a three-corpus benchmark. It builds a fixed-threshold cross-dataset benchmark across IoT-23, ToN-IoT, and UNSW-NB15 using one shared tabular feature schema and \ModelCount{} practical classifiers. Each threshold is frozen on source validation at \FrozenFprTarget{} false positive rate and transferred unchanged to every target domain, producing \NaturalSettingCount{} natural-transfer settings. It then decomposes each setting's failure into three components:
 
@@ -47,7 +58,7 @@ This paper addresses the decomposition gap in a three-corpus benchmark. It build
     \item \textbf{Benign covariate shift:} Whether distributional drift in the benign feature space drives false-positive inflation independently of attack novelty (Section~\ref{sec:covariate-shift}).
 \end{enumerate}
 
-The paper contributes three empirical findings. First, the dominant failure mode in this three-corpus benchmark is ranking failure: \FullRankingFailureCount{} of \NaturalSettingCount{} settings have target AUROC below 0.60. On point estimates, \FullInversionCount{} of those failing settings fall strictly below chance, indicating inverted target score orientation under the transferred rule. This benchmark-wide result includes the Tier~1 stress-test directions involving UNSW-NB15, while the claim-bearing novelty analysis remains restricted to the \PrimaryIotSettingCount{} IoT-only settings. Second, on that claim-bearing IoT subset, oracle novelty provides only a bounded directional explanation of sensitivity loss (subset Spearman \PrimaryOracleSpearman{}), while the global benign-shift association with false-positive severity remains weak and non-monotone (Spearman $\DirectionBenignKsFprSeveritySpearman{}$ over \DirectionCount{} directions). Third, the pre-registered target-free novelty proxy $\hat{\alpha}$ remains too weak for operational deployment on the full benchmark (catastrophic-failure AUROC \AlphaHatAllNaturalCatastrophicAuroc{}).
+The paper contributes three empirical findings. First, the dominant failure mode in this three-corpus benchmark is ranking failure: \FullRankingFailureCount{} of \NaturalSettingCount{} settings have target AUROC below 0.6. On point estimates, \FullInversionCount{} of those failing settings fall strictly below chance, indicating inverted target score orientation under the transferred rule. This benchmark-wide result includes the Tier~1 stress-test directions involving UNSW-NB15, while the claim-bearing novelty analysis remains restricted to the \PrimaryIotSettingCount{} IoT-only settings. Second, on that claim-bearing IoT subset, oracle novelty provides only a bounded directional explanation of sensitivity loss (subset Spearman \PrimaryOracleSpearman{}), while the global benign-shift association with false-positive severity remains weak and non-monotone (Spearman $\DirectionBenignKsFprSeveritySpearman{}$ over \DirectionCount{} directions). Third, the pre-registered target-free novelty proxy $\hat{\alpha}$ remains too weak for operational deployment on the full benchmark (catastrophic-failure AUROC \AlphaHatAllNaturalCatastrophicAuroc{}).
 
 \section{Related Work}
 
@@ -248,7 +259,7 @@ The results should not be read as evidence that cross-domain tabular flow-level 
 
 The novelty result is intentionally narrow. Only \PrimaryIotSettingCount{} settings satisfy the current ontology coverage rule, which requires mapped attack coverage of at least \NoveltyCoverageFloor{} on both source and target domains. The oracle novelty story therefore applies only to the Tier~2 IoT subset, not to the full three-dataset matrix.
 
-UNSW-NB15 remains a stress-test domain rather than a semantic peer in the novelty analysis. Its directions belong in Tier~1 because they reveal transferred instability, but the current ontology does not justify using those rows as evidence for the novelty claim. The study also uses one aggressively reduced shared tabular feature schema. That keeps the benchmark comparable, but it likely discards useful signal that richer dataset-native feature sets retain. To make that limitation explicit, the repository now includes an auxiliary within-domain information-retention audit comparing the canonical shared-16 representation against dataset-native augmented feature sets; those results are diagnostic only and are not mixed into the cross-dataset transfer benchmark because the native spaces are not directly comparable across datasets. The auxiliary audit is also HGB-only, so it should be read as a representative strong-model diagnostic rather than evidence that LR / ET / MLP retain the same amount of dataset-native signal. The study also does not include sequence-based NIDS baselines. Their transfer behavior under the same protocol remains outside scope.
+UNSW-NB15 remains a stress-test domain rather than a semantic peer in the novelty analysis. Its directions belong in Tier~1 because they reveal transferred instability, but the current ontology does not justify using those rows as evidence for the novelty claim. The study also uses one aggressively reduced shared tabular feature schema. That keeps the benchmark comparable, but it likely discards useful signal that richer dataset-native feature sets retain. To make that limitation explicit, the repository now includes an auxiliary within-domain information-retention audit comparing the canonical shared-16 representation against dataset-native augmented feature sets; those results are diagnostic only and are not mixed into the cross-dataset transfer benchmark because the native spaces are not directly comparable across datasets. The auxiliary audit is also HGB-only, so it should be read as a representative strong-model diagnostic rather than evidence that LR / ET / MLP retain the same amount of dataset-native signal. The submission still does not include sequence-based NIDS baselines. Their transfer behavior under the same protocol remains outside scope.
 
 \input{tables/native_feature_aux.tex}
 
@@ -269,9 +280,13 @@ This appendix reports the diagnostic target-retuned threshold summary generated 
 \input{tables/oracle_retuned_summary.tex}
 \FloatBarrier
 
+\section*{Acknowledgments}
+
+This study is a part of the PhD thesis titled ``Advanced Persistent Threat Detection and Prevention Based on User Behaviour and Risk Estimation'' at the Institute of Graduate Studies, Istanbul University-Cerrahpa\c{s}a, Istanbul, T\"urkiye.
+
 \section*{Funding}
 
-Funding information will be added at submission.
+[FILL: funding details --- e.g., ``This work received no external funding.'' or grant information].
 
 \section*{Declaration of competing interest}
 
@@ -279,7 +294,11 @@ The authors declare that they have no known competing financial interests or per
 
 \section*{Data availability}
 
-Dataset sources and generated benchmark artifacts are described in the repository. A formal data-availability statement will be added at submission.
+The study uses three public network intrusion detection datasets: IoT-23~\cite{garcia2020iot23}, ToN-IoT~\cite{booij2022ton}, and UNSW-NB15~\cite{moustafa2015unsw}. Each dataset is distributed by its original providers at the cited references and is not redistributed with this work. All derived benchmark artifacts---the shared 16-feature schema (\emph{feature\_schema\_v1}), the ontology mapping used for Tier~2 novelty analysis, the deterministic train/validation/holdout split manifest, the frozen threshold-selection rule, and the bootstrap seed (20260413) used throughout---are documented in the project repository.
+
+\section*{Code availability}
+
+The full experimental pipeline, including dataset staging, feature extraction, classifier training, frozen-threshold transfer, target-free monitors, benign-only recalibration, CORAL auxiliary comparison, and manuscript-asset generation, is implemented in Python using scikit-learn and matplotlib. Source code and the manuscript asset builders are available at [FILL: repository URL, e.g., https://github.com/\ldots/iot-ids]. All tables and figures in this manuscript are generated deterministically from the canonical benchmark artifacts.
 
 \bibliographystyle{elsarticle-num}
 \bibliography{references}
